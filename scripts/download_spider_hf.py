@@ -7,7 +7,9 @@ import json
 from pathlib import Path
 from datasets import load_dataset
 
-DATA_DIR = Path(__file__).parent / "data" / "spider"
+# Use project root, not scripts/ directory
+PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = PROJECT_ROOT / "data" / "spider"
 
 
 def download_spider():

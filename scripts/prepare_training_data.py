@@ -27,8 +27,10 @@ from text_linearization import (
 )
 
 
-DATA_DIR = Path(__file__).parent / "data"
-OUTPUT_DIR = Path(__file__).parent / "training_data"
+# Use project root, not scripts/ directory
+PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+OUTPUT_DIR = PROJECT_ROOT / "training_data"
 
 
 # ============================================================================
