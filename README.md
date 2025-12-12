@@ -159,7 +159,7 @@ Edges: Student.id -- Course.student_id (FK)
 
 Automatically connects columns with semantically similar names:
 
-```
+```txt
 Semantic Edges:
 [Birthday] <-> [DOB]
 [Department] <-> [Dept]
@@ -169,7 +169,7 @@ Semantic Edges:
 
 Full type annotations for explicit relational roles:
 
-```
+```txt
 [table] Student
   [column_primary] id
   [column] name
@@ -181,7 +181,7 @@ Full type annotations for explicit relational roles:
 
 Graphs are converted to text for LLM input:
 
-```
+```txt
 [DATABASE]
 university
 
@@ -232,7 +232,7 @@ Supported base models:
 - **Use**: Warmup training
 
 **Example:**
-```
+```txt
 Question: What institution had 6 wins and a current streak of 2?
 SQL: SELECT "Institution" FROM "table" WHERE "Wins" = 6 AND "Current Streak" = '2'
 ```
@@ -306,7 +306,7 @@ SQL: SELECT "Institution" FROM "table" WHERE "Wins" = 6 AND "Current Streak" = '
 
 ## Project Structure
 
-```
+```shell
 graphNL2SQL/
 ├── scripts/
 │   ├── schema_graph.py          # Hybrid graph schema representation
