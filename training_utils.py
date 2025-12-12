@@ -1,0 +1,798 @@
+"""
+Training Utilities for NL2SQL Fine-tuning.
+
+This module encapsulates all training-related functions for use in notebooks
+and scripts. It provides a clean interface for:
+- Loading datasets (WikiSQL, Spider)
+- Model and tokenizer loading with quantization
+- LoRA configuration and setup
+- Two-phase training (WikiSQL warmup + Spider main training)
+- WandB integration
+"""
+
+import json
+from pathlib import Path
+from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any, Tuple
+
+import torch
+from datasets import Dataset
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    TrainingArguments,
+    Trainer,
+    DataCollatorForLanguageModeling,
+)
+from peft import (
+    LoraConfig,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+    TaskType,
+)
+
+# Optional WandB import
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+
+
+# =============================================================================
+# CONFIGURATION DATACLASSES
+# =============================================================================
+
+@dataclass
+class TrainingConfig:
+    """Training configuration with all hyperparameters."""
+    # Model
+    model_name: str = "Qwen/Qwen2.5-7B-Instruct"
+    load_in_4bit: bool = True
+    load_in_8bit: bool = False
+    use_bf16: bool = True
+    use_fp16: bool = False
+    
+    # LoRA
+    lora_r: int = 32
+    lora_alpha: int = 64
+    lora_dropout: float = 0.05
+    lora_target_modules: List[str] = field(default_factory=lambda: [
+        "q_proj", "k_proj", "v_proj", "o_proj"
+    ])
+    
+    # Training
+    batch_size: int = 2
+    gradient_accumulation: int = 8
+    learning_rate: float = 2e-4
+    lr_scheduler: str = "cosine"
+    warmup_ratio: float = 0.05
+    max_seq_length: int = 1024
+    gradient_checkpointing: bool = True
+    
+    # Epochs
+    wikisql_epochs: int = 1
+    spider_epochs: int = 3
+    
+    # Paths
+    data_dir: str = "./training_data"
+    output_dir: str = "./checkpoints"
+    
+    # Limits
+    max_train_samples: Optional[int] = None
+    max_eval_samples: int = 500
+    
+    # Saving
+    save_strategy: str = "epoch"
+    save_total_limit: int = 3
+    
+    # WandB
+    use_wandb: bool = True
+    wandb_project: str = "nl2sql-finetuning"
+    wandb_run_name: Optional[str] = None
+
+
+# =============================================================================
+# DATA LOADING
+# =============================================================================
+
+def load_jsonl(file_path: str) -> List[Dict]:
+    """Load data from JSONL file."""
+    data = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            data.append(json.loads(line))
+    return data
+
+
+def load_datasets(data_dir: str, verbose: bool = True) -> Tuple[List, List, List, List]:
+    """
+    Load WikiSQL and Spider datasets.
+    
+    Args:
+        data_dir: Path to training data directory
+        verbose: Whether to print dataset info
+        
+    Returns:
+        Tuple of (wikisql_train, wikisql_dev, spider_train, spider_dev)
+    """
+    data_dir = Path(data_dir)
+    
+    if verbose:
+        print("=" * 60)
+        print("DATASET INFORMATION")
+        print("=" * 60)
+    
+    # WikiSQL
+    wikisql_train_path = data_dir / "wikisql_train.jsonl"
+    wikisql_dev_path = data_dir / "wikisql_dev.jsonl"
+    
+    wikisql_train_data = []
+    wikisql_dev_data = []
+    
+    if wikisql_train_path.exists():
+        wikisql_train_data = load_jsonl(str(wikisql_train_path))
+        wikisql_dev_data = load_jsonl(str(wikisql_dev_path))
+        if verbose:
+            print(f"\n WikiSQL Dataset:")
+            print(f"   Train samples: {len(wikisql_train_data):,}")
+            print(f"   Dev samples:   {len(wikisql_dev_data):,}")
+            print(f"   Columns: {list(wikisql_train_data[0].keys())}")
+    else:
+        if verbose:
+            print(f"\n WikiSQL not found at {wikisql_train_path}")
+    
+    # Spider
+    spider_train_path = data_dir / "spider_train.jsonl"
+    spider_dev_path = data_dir / "spider_dev.jsonl"
+    
+    spider_train_data = []
+    spider_dev_data = []
+    
+    if spider_train_path.exists():
+        spider_train_data = load_jsonl(str(spider_train_path))
+        spider_dev_data = load_jsonl(str(spider_dev_path))
+        if verbose:
+            print(f"\n Spider Dataset:")
+            print(f"   Train samples: {len(spider_train_data):,}")
+            print(f"   Dev samples:   {len(spider_dev_data):,}")
+            print(f"   Columns: {list(spider_train_data[0].keys())}")
+            
+            # Count multi-table and JOIN queries
+            multi_table = sum(1 for ex in spider_train_data if ex.get('num_tables', 1) > 1)
+            has_join = sum(1 for ex in spider_train_data if ex.get('has_join', False))
+            print(f"   Multi-table: {multi_table:,} ({100*multi_table/len(spider_train_data):.1f}%)")
+            print(f"   With JOIN:   {has_join:,} ({100*has_join/len(spider_train_data):.1f}%)")
+    else:
+        if verbose:
+            print(f"\n Spider not found at {spider_train_path}")
+    
+    if verbose:
+        print("\n" + "=" * 60)
+    
+    return wikisql_train_data, wikisql_dev_data, spider_train_data, spider_dev_data
+
+
+def show_sample_examples(
+    wikisql_train_data: List[Dict],
+    spider_train_data: List[Dict]
+) -> None:
+    """Display sample examples from datasets."""
+    print("=" * 60)
+    print("SAMPLE EXAMPLES")
+    print("=" * 60)
+    
+    if wikisql_train_data:
+        print("\n WikiSQL Example:")
+        example = wikisql_train_data[0]
+        print(f"Question: {example.get('question', 'N/A')}")
+        print(f"SQL: {example.get('sql', 'N/A')}")
+        print(f"\nSchema preview:")
+        schema = example.get('schema', 'N/A')
+        print(schema[:500] + "..." if len(schema) > 500 else schema)
+    
+    if spider_train_data:
+        print("\n" + "-" * 60)
+        print("\n Spider Example:")
+        example = spider_train_data[0]
+        print(f"Question: {example.get('question', 'N/A')}")
+        print(f"SQL: {example.get('sql', 'N/A')}")
+        print(f"Database: {example.get('db_id', 'N/A')}")
+        print(f"\nSchema preview:")
+        schema = example.get('schema', 'N/A')
+        print(schema[:500] + "..." if len(schema) > 500 else schema)
+
+
+# =============================================================================
+# DATA PREPROCESSING
+# =============================================================================
+
+def create_prompt(example: Dict) -> str:
+    """Create training prompt from example."""
+    system_msg = (
+        "You are a SQL expert. Given a database schema and a natural language question, "
+        "generate the correct SQL query. Output only the SQL query."
+    )
+    
+    user_input = example.get("input", "")
+    sql_output = example.get("sql", example.get("output", ""))
+    
+    # Remove [SQL] prefix if present
+    if sql_output.startswith("[SQL]\n"):
+        sql_output = sql_output[6:]
+    
+    prompt = f"""<|im_start|>system
+{system_msg}<|im_end|>
+<|im_start|>user
+{user_input}<|im_end|>
+<|im_start|>assistant
+{sql_output}<|im_end|>"""
+    
+    return prompt
+
+
+def preprocess_function(examples: Dict, tokenizer, max_length: int) -> Dict:
+    """Preprocess examples for training."""
+    prompts = [
+        create_prompt({"input": inp, "sql": sql})
+        for inp, sql in zip(examples["input"], examples["sql"])
+    ]
+    
+    tokenized = tokenizer(
+        prompts,
+        truncation=True,
+        max_length=max_length,
+        padding="max_length",
+        return_tensors=None,
+    )
+    
+    tokenized["labels"] = tokenized["input_ids"].copy()
+    return tokenized
+
+
+def prepare_dataset(
+    data: List[Dict],
+    tokenizer,
+    max_length: int,
+    max_samples: Optional[int] = None,
+    desc: str = "data"
+) -> Dataset:
+    """Prepare dataset for training."""
+    if max_samples:
+        data = data[:max_samples]
+    
+    dataset = Dataset.from_list(data)
+    
+    processed = dataset.map(
+        lambda x: preprocess_function(x, tokenizer, max_length),
+        batched=True,
+        remove_columns=dataset.column_names,
+        desc=f"Tokenizing {desc}"
+    )
+    
+    return processed
+
+
+# =============================================================================
+# MODEL LOADING
+# =============================================================================
+
+def load_model_and_tokenizer(config: TrainingConfig) -> Tuple[Any, Any]:
+    """
+    Load model and tokenizer with quantization config.
+    
+    Args:
+        config: Training configuration
+        
+    Returns:
+        Tuple of (model, tokenizer)
+    """
+    print("=" * 60)
+    print("LOADING MODEL")
+    print("=" * 60)
+    print(f"\nModel: {config.model_name}")
+    
+    # Configure quantization
+    quantization_config = None
+    if config.load_in_4bit:
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+        print("Using 4-bit quantization (QLoRA)")
+    elif config.load_in_8bit:
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+        )
+        print("Using 8-bit quantization")
+    
+    # Load tokenizer
+    print("\nLoading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(
+        config.model_name,
+        trust_remote_code=True,
+        padding_side="right",
+    )
+    
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+    
+    # Load model
+    print("Loading model (this may take a few minutes)...")
+    model = AutoModelForCausalLM.from_pretrained(
+        config.model_name,
+        quantization_config=quantization_config,
+        torch_dtype=torch.bfloat16 if config.use_bf16 else torch.float16,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    
+    # Prepare for k-bit training
+    if config.load_in_4bit or config.load_in_8bit:
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=config.gradient_checkpointing
+        )
+    
+    print("\n Model loaded!")
+    
+    return model, tokenizer
+
+
+def setup_lora(model, config: TrainingConfig) -> Any:
+    """
+    Configure and apply LoRA to model.
+    
+    Args:
+        model: Base model
+        config: Training configuration
+        
+    Returns:
+        Model with LoRA adapters
+    """
+    print("=" * 60)
+    print("CONFIGURING LoRA")
+    print("=" * 60)
+    
+    lora_config = LoraConfig(
+        r=config.lora_r,
+        lora_alpha=config.lora_alpha,
+        lora_dropout=config.lora_dropout,
+        target_modules=config.lora_target_modules,
+        bias="none",
+        task_type=TaskType.CAUSAL_LM,
+    )
+    
+    print(f"\nLoRA Configuration:")
+    print(f"   Rank (r):        {config.lora_r}")
+    print(f"   Alpha:           {config.lora_alpha}")
+    print(f"   Dropout:         {config.lora_dropout}")
+    print(f"   Target modules:  {config.lora_target_modules}")
+    
+    model = get_peft_model(model, lora_config)
+    
+    print("\n LoRA adapters added!")
+    
+    return model
+
+
+def print_model_parameters(model) -> None:
+    """Print detailed parameter count information."""
+    print("=" * 60)
+    print("MODEL PARAMETERS (AFTER LoRA)")
+    print("=" * 60)
+    
+    # Use PEFT's built-in method
+    model.print_trainable_parameters()
+    
+    # Compute manually for more detail
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    frozen_params = total_params - trainable_params
+    
+    def format_params(num):
+        if num >= 1e9:
+            return f"{num/1e9:.2f}B"
+        elif num >= 1e6:
+            return f"{num/1e6:.2f}M"
+        elif num >= 1e3:
+            return f"{num/1e3:.2f}K"
+        return str(num)
+    
+    print(f"\n Detailed Parameter Count:")
+    print(f"   Total parameters:     {total_params:>15,} ({format_params(total_params)})")
+    print(f"   Trainable parameters: {trainable_params:>15,} ({format_params(trainable_params)})")
+    print(f"   Frozen parameters:    {frozen_params:>15,} ({format_params(frozen_params)})")
+    print(f"   Trainable %:          {100 * trainable_params / total_params:>14.4f}%")
+    
+    # LoRA parameter breakdown
+    lora_params = sum(p.numel() for n, p in model.named_parameters() if 'lora' in n.lower())
+    print(f"\n LoRA Adapter Size:")
+    print(f"   LoRA parameters:      {lora_params:>15,} ({format_params(lora_params)})")
+
+
+# =============================================================================
+# WANDB INTEGRATION
+# =============================================================================
+
+def init_wandb(config: TrainingConfig) -> str:
+    """
+    Initialize Weights & Biases logging.
+    
+    Args:
+        config: Training configuration
+        
+    Returns:
+        Run name string
+    """
+    if not config.use_wandb:
+        print("WandB disabled")
+        return "nl2sql_training"
+    
+    if not WANDB_AVAILABLE:
+        print("Warning: wandb not installed, disabling")
+        return "nl2sql_training"
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = config.wandb_run_name or f"nl2sql_{timestamp}"
+    
+    wandb.init(
+        project=config.wandb_project,
+        name=run_name,
+        config={
+            "model": config.model_name,
+            "lora_r": config.lora_r,
+            "lora_alpha": config.lora_alpha,
+            "lora_dropout": config.lora_dropout,
+            "batch_size": config.batch_size,
+            "gradient_accumulation": config.gradient_accumulation,
+            "learning_rate": config.learning_rate,
+            "max_seq_length": config.max_seq_length,
+            "wikisql_epochs": config.wikisql_epochs,
+            "spider_epochs": config.spider_epochs,
+        }
+    )
+    print(f" WandB initialized! Run: {run_name}")
+    
+    return run_name
+
+
+def finish_wandb() -> None:
+    """Finish WandB run."""
+    if WANDB_AVAILABLE:
+        try:
+            wandb.finish()
+            print(" WandB run finished!")
+        except:
+            pass
+
+
+# =============================================================================
+# TRAINING FUNCTIONS
+# =============================================================================
+
+def train_phase1_wikisql(
+    model,
+    tokenizer,
+    wikisql_train_data: List[Dict],
+    wikisql_dev_data: List[Dict],
+    config: TrainingConfig,
+    run_name: str = "nl2sql"
+) -> Trainer:
+    """
+    Phase 1: WikiSQL warmup training.
+    
+    Args:
+        model: Model with LoRA adapters
+        tokenizer: Tokenizer
+        wikisql_train_data: WikiSQL training data
+        wikisql_dev_data: WikiSQL dev data
+        config: Training configuration
+        run_name: WandB run name
+        
+    Returns:
+        Trainer object
+    """
+    if not wikisql_train_data or config.wikisql_epochs <= 0:
+        print("Skipping Phase 1 (WikiSQL not available or epochs=0)")
+        return None
+    
+    print("=" * 60)
+    print("PHASE 1: WikiSQL Warmup")
+    print("=" * 60)
+    
+    # Prepare datasets
+    print("\nPreparing WikiSQL data...")
+    wikisql_train_dataset = prepare_dataset(
+        wikisql_train_data, tokenizer, config.max_seq_length,
+        config.max_train_samples, "WikiSQL train"
+    )
+    wikisql_eval_dataset = prepare_dataset(
+        wikisql_dev_data, tokenizer, config.max_seq_length,
+        config.max_eval_samples, "WikiSQL eval"
+    )
+    
+    print(f"\n WikiSQL Dataset Ready:")
+    print(f"   Train: {len(wikisql_train_dataset):,} samples")
+    print(f"   Eval:  {len(wikisql_eval_dataset):,} samples")
+    
+    # Training arguments
+    phase1_output = f"{config.output_dir}/phase1_wikisql"
+    
+    training_args = TrainingArguments(
+        output_dir=phase1_output,
+        num_train_epochs=config.wikisql_epochs,
+        per_device_train_batch_size=config.batch_size,
+        per_device_eval_batch_size=config.batch_size,
+        gradient_accumulation_steps=config.gradient_accumulation,
+        learning_rate=config.learning_rate,
+        lr_scheduler_type=config.lr_scheduler,
+        warmup_ratio=config.warmup_ratio,
+        weight_decay=0.01,
+        logging_steps=10,
+        eval_strategy="epoch",
+        eval_steps=200,
+        save_strategy=config.save_strategy,
+        save_total_limit=config.save_total_limit,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        bf16=config.use_bf16,
+        fp16=config.use_fp16,
+        gradient_checkpointing=config.gradient_checkpointing,
+        gradient_checkpointing_kwargs={"use_reentrant": False} if config.gradient_checkpointing else None,
+        report_to="wandb" if config.use_wandb and WANDB_AVAILABLE else "none",
+        run_name=f"{run_name}_phase1",
+        remove_unused_columns=False,
+    )
+    
+    # Data collator
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=False,
+    )
+    
+    # Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=wikisql_train_dataset,
+        eval_dataset=wikisql_eval_dataset,
+        data_collator=data_collator,
+        tokenizer=tokenizer,
+    )
+    
+    print("\n Starting Phase 1 training...")
+    trainer.train()
+    
+    # Save
+    print(f"\n Saving Phase 1 model to {phase1_output}/final")
+    trainer.save_model(f"{phase1_output}/final")
+    tokenizer.save_pretrained(f"{phase1_output}/final")
+    
+    print("\n Phase 1 complete!")
+    
+    return trainer
+
+
+def train_phase2_spider(
+    model,
+    tokenizer,
+    spider_train_data: List[Dict],
+    spider_dev_data: List[Dict],
+    config: TrainingConfig,
+    run_name: str = "nl2sql"
+) -> Trainer:
+    """
+    Phase 2: Spider main training.
+    
+    Args:
+        model: Model (possibly after Phase 1)
+        tokenizer: Tokenizer
+        spider_train_data: Spider training data
+        spider_dev_data: Spider dev data
+        config: Training configuration
+        run_name: WandB run name
+        
+    Returns:
+        Trainer object
+    """
+    if not spider_train_data or config.spider_epochs <= 0:
+        print("Skipping Phase 2 (Spider not available or epochs=0)")
+        return None
+    
+    print("=" * 60)
+    print("PHASE 2: Spider Main Training")
+    print("=" * 60)
+    
+    # Prepare datasets
+    print("\nPreparing Spider data...")
+    spider_train_dataset = prepare_dataset(
+        spider_train_data, tokenizer, config.max_seq_length,
+        config.max_train_samples, "Spider train"
+    )
+    spider_eval_dataset = prepare_dataset(
+        spider_dev_data, tokenizer, config.max_seq_length,
+        config.max_eval_samples, "Spider eval"
+    )
+    
+    print(f"\n Spider Dataset Ready:")
+    print(f"   Train: {len(spider_train_dataset):,} samples")
+    print(f"   Eval:  {len(spider_eval_dataset):,} samples")
+    
+    # Training arguments
+    phase2_output = f"{config.output_dir}/phase2_spider"
+    
+    training_args = TrainingArguments(
+        output_dir=phase2_output,
+        num_train_epochs=config.spider_epochs,
+        per_device_train_batch_size=config.batch_size,
+        per_device_eval_batch_size=config.batch_size,
+        gradient_accumulation_steps=config.gradient_accumulation,
+        learning_rate=config.learning_rate,
+        lr_scheduler_type=config.lr_scheduler,
+        warmup_ratio=config.warmup_ratio,
+        weight_decay=0.01,
+        logging_steps=10,
+        eval_strategy="steps",
+        eval_steps=200,
+        save_strategy=config.save_strategy,
+        save_total_limit=config.save_total_limit,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        bf16=config.use_bf16,
+        fp16=config.use_fp16,
+        gradient_checkpointing=config.gradient_checkpointing,
+        gradient_checkpointing_kwargs={"use_reentrant": False} if config.gradient_checkpointing else None,
+        report_to="wandb" if config.use_wandb and WANDB_AVAILABLE else "none",
+        run_name=f"{run_name}_phase2",
+        remove_unused_columns=False,
+    )
+    
+    # Data collator
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=False,
+    )
+    
+    # Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=spider_train_dataset,
+        eval_dataset=spider_eval_dataset,
+        data_collator=data_collator,
+        tokenizer=tokenizer,
+    )
+    
+    print("\n Starting Phase 2 training...")
+    trainer.train()
+    
+    # Save
+    print(f"\n Saving Phase 2 model to {phase2_output}/final")
+    trainer.save_model(f"{phase2_output}/final")
+    tokenizer.save_pretrained(f"{phase2_output}/final")
+    
+    print("\n Phase 2 complete!")
+    
+    return trainer
+
+
+def finish_training(config: TrainingConfig) -> None:
+    """Finish training and cleanup."""
+    finish_wandb()
+    
+    print("\n" + "=" * 60)
+    print("TRAINING COMPLETE!")
+    print("=" * 60)
+    print(f"\nCheckpoints saved to: {config.output_dir}")
+    print(f"\nTo test the model, run:")
+    print(f"  python inference.py --model {config.output_dir}/phase2_spider/final")
+
+
+# =============================================================================
+# HIGH-LEVEL TRAINING FUNCTION
+# =============================================================================
+
+def run_full_training(config: TrainingConfig = None) -> Tuple[Any, Any, Trainer]:
+    """
+    Run the complete two-phase training pipeline.
+    
+    Args:
+        config: Training configuration (uses defaults if None)
+        
+    Returns:
+        Tuple of (model, tokenizer, final_trainer)
+    """
+    if config is None:
+        config = TrainingConfig()
+    
+    # Load datasets
+    wikisql_train, wikisql_dev, spider_train, spider_dev = load_datasets(
+        config.data_dir, verbose=True
+    )
+    
+    # Show samples
+    show_sample_examples(wikisql_train, spider_train)
+    
+    # Load model and tokenizer
+    model, tokenizer = load_model_and_tokenizer(config)
+    
+    # Setup LoRA
+    model = setup_lora(model, config)
+    
+    # Print parameters
+    print_model_parameters(model)
+    
+    # Initialize WandB
+    run_name = init_wandb(config)
+    
+    # Phase 1: WikiSQL warmup
+    train_phase1_wikisql(
+        model, tokenizer,
+        wikisql_train, wikisql_dev,
+        config, run_name
+    )
+    
+    # Phase 2: Spider main training
+    trainer = train_phase2_spider(
+        model, tokenizer,
+        spider_train, spider_dev,
+        config, run_name
+    )
+    
+    # Finish
+    finish_training(config)
+    
+    return model, tokenizer, trainer
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+def get_default_config() -> TrainingConfig:
+    """Get default training configuration."""
+    return TrainingConfig()
+
+
+def get_small_gpu_config() -> TrainingConfig:
+    """Configuration for smaller GPUs (8-12GB VRAM)."""
+    config = TrainingConfig()
+    config.load_in_4bit = True
+    config.batch_size = 1
+    config.gradient_accumulation = 16
+    config.lora_r = 16
+    config.lora_alpha = 32
+    return config
+
+
+def get_large_gpu_config() -> TrainingConfig:
+    """Configuration for larger GPUs (24GB+ VRAM)."""
+    config = TrainingConfig()
+    config.load_in_4bit = False
+    config.load_in_8bit = True
+    config.batch_size = 4
+    config.gradient_accumulation = 4
+    config.lora_r = 64
+    config.lora_alpha = 128
+    config.lora_target_modules = [
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj"
+    ]
+    return config
+
+
+# Predefined configurations
+CONFIGS = {
+    "default": get_default_config,
+    "small_gpu": get_small_gpu_config,
+    "large_gpu": get_large_gpu_config,
+}
+
