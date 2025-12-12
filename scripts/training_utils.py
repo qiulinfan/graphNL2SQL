@@ -94,6 +94,134 @@ class TrainingConfig:
     wandb_run_name: Optional[str] = None
 
 
+def load_config_from_json(config_path: str = "config.json") -> TrainingConfig:
+    """
+    Load training configuration from JSON file.
+    
+    Args:
+        config_path: Path to config.json file
+        
+    Returns:
+        TrainingConfig object
+    """
+    with open(config_path, 'r') as f:
+        data = json.load(f)
+    
+    return TrainingConfig(
+        # Model
+        model_name=data["model"]["model_name"],
+        load_in_4bit=data["model"]["load_in_4bit"],
+        load_in_8bit=data["model"]["load_in_8bit"],
+        # LoRA
+        lora_r=data["lora"]["r"],
+        lora_alpha=data["lora"]["alpha"],
+        lora_dropout=data["lora"]["dropout"],
+        lora_target_modules=data["lora"]["target_modules"],
+        # Training
+        wikisql_epochs=data["training"]["wikisql_epochs"],
+        spider_epochs=data["training"]["spider_epochs"],
+        batch_size=data["training"]["batch_size"],
+        gradient_accumulation=data["training"]["gradient_accumulation"],
+        learning_rate=data["training"]["learning_rate"],
+        lr_scheduler=data["training"]["lr_scheduler"],
+        warmup_ratio=data["training"]["warmup_ratio"],
+        max_seq_length=data["training"]["max_seq_length"],
+        gradient_checkpointing=data["training"]["gradient_checkpointing"],
+        use_bf16=data["training"]["use_bf16"],
+        use_fp16=data["training"]["use_fp16"],
+        # Data
+        data_dir=data["data"]["data_dir"],
+        output_dir=data["data"]["output_dir"],
+        max_train_samples=data["data"]["max_train_samples"],
+        max_eval_samples=data["data"]["max_eval_samples"],
+        # WandB
+        use_wandb=data["wandb"]["enabled"],
+        wandb_project=data["wandb"]["project"],
+        wandb_run_name=data["wandb"]["run_name"],
+        # Save
+        save_strategy=data["save"]["strategy"],
+        save_total_limit=data["save"]["total_limit"],
+    )
+
+
+def save_config_to_json(config: TrainingConfig, config_path: str = "config.json") -> None:
+    """
+    Save training configuration to JSON file.
+    
+    Args:
+        config: TrainingConfig object
+        config_path: Path to save config.json
+    """
+    data = {
+        "model": {
+            "model_name": config.model_name,
+            "load_in_4bit": config.load_in_4bit,
+            "load_in_8bit": config.load_in_8bit,
+        },
+        "lora": {
+            "r": config.lora_r,
+            "alpha": config.lora_alpha,
+            "dropout": config.lora_dropout,
+            "target_modules": config.lora_target_modules,
+        },
+        "training": {
+            "wikisql_epochs": config.wikisql_epochs,
+            "spider_epochs": config.spider_epochs,
+            "batch_size": config.batch_size,
+            "gradient_accumulation": config.gradient_accumulation,
+            "learning_rate": config.learning_rate,
+            "lr_scheduler": config.lr_scheduler,
+            "warmup_ratio": config.warmup_ratio,
+            "max_seq_length": config.max_seq_length,
+            "gradient_checkpointing": config.gradient_checkpointing,
+            "use_bf16": config.use_bf16,
+            "use_fp16": config.use_fp16,
+        },
+        "data": {
+            "data_dir": config.data_dir,
+            "output_dir": config.output_dir,
+            "max_train_samples": config.max_train_samples,
+            "max_eval_samples": config.max_eval_samples,
+        },
+        "wandb": {
+            "enabled": config.use_wandb,
+            "project": config.wandb_project,
+            "run_name": config.wandb_run_name,
+        },
+        "save": {
+            "strategy": config.save_strategy,
+            "total_limit": config.save_total_limit,
+        },
+    }
+    
+    with open(config_path, 'w') as f:
+        json.dump(data, f, indent=2)
+    
+    print(f"Configuration saved to {config_path}")
+
+
+def print_config(config: TrainingConfig) -> None:
+    """Print configuration summary."""
+    print("=" * 60)
+    print("CONFIGURATION")
+    print("=" * 60)
+    print(f"\nModel: {config.model_name}")
+    print(f"  4-bit: {config.load_in_4bit}, 8-bit: {config.load_in_8bit}")
+    print(f"\nLoRA:")
+    print(f"  Rank: {config.lora_r}, Alpha: {config.lora_alpha}, Dropout: {config.lora_dropout}")
+    print(f"  Target modules: {config.lora_target_modules}")
+    print(f"\nTraining:")
+    print(f"  Batch size: {config.batch_size} x {config.gradient_accumulation} = {config.batch_size * config.gradient_accumulation} effective")
+    print(f"  Learning rate: {config.learning_rate}, Scheduler: {config.lr_scheduler}")
+    print(f"  Epochs: {config.wikisql_epochs} WikiSQL + {config.spider_epochs} Spider")
+    print(f"\nPaths:")
+    print(f"  Data: {config.data_dir}")
+    print(f"  Output: {config.output_dir}")
+    print(f"\nWandB: {'Enabled' if config.use_wandb else 'Disabled'}")
+    if config.use_wandb:
+        print(f"  Project: {config.wandb_project}")
+
+
 # =============================================================================
 # DATA LOADING
 # =============================================================================

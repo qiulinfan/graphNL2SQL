@@ -183,8 +183,18 @@ def load_finetuned_model(
 # =============================================================================
 
 def normalize_sql(sql: str) -> str:
-    """Normalize SQL for comparison."""
-    return " ".join(sql.lower().split())
+    """
+    Normalize SQL for comparison.
+    
+    Handles:
+    - Case insensitivity (SELECT = select)
+    - Whitespace normalization (multiple spaces -> single space)
+    - Quote unification (double quotes -> single quotes)
+    """
+    sql = sql.lower()                    # 忽略大小写
+    sql = sql.replace('"', "'")          # 统一引号为单引号
+    sql = " ".join(sql.split())          # 规范化空格
+    return sql
 
 
 def evaluate_model(
