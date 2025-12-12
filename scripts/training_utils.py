@@ -710,14 +710,19 @@ def train_phase1_wikisql(
     eval_fraction = getattr(config, 'eval_every_epoch_fraction', 0.1)
     eval_steps = max(1, int(steps_per_epoch * eval_fraction))
     
-    # Save checkpoint every 0.5 epoch (to avoid too many checkpoints)
-    # 每 0.5 个 epoch 保存一次 checkpoint（避免保存太多）
-    save_steps = max(1, int(steps_per_epoch * 0.5))
+    # Save checkpoint: ensure save_steps is a multiple of eval_steps
+    # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
+    # Target: save every ~0.5 epoch, but must be multiple of eval_steps
+    # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
+    target_save_steps = max(1, int(steps_per_epoch * 0.5))
+    # Round up to nearest multiple of eval_steps
+    # 向上取整到最近的 eval_steps 倍数
+    save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps
     
     print(f"\n Training Steps Configuration:")
     print(f"   Steps per epoch:     {steps_per_epoch:,}")
     print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
-    print(f"   Save every:          {save_steps:,} steps (~0.5 epoch)")
+    print(f"   Save every:          {save_steps:,} steps (~{save_steps/steps_per_epoch:.2f} epoch, {save_steps//eval_steps}x eval)")
     
     # Training arguments
     phase1_output = f"{config.output_dir}/phase1_wikisql"
@@ -838,14 +843,19 @@ def train_phase2_spider(
     eval_fraction = getattr(config, 'eval_every_epoch_fraction', 0.1)
     eval_steps = max(1, int(steps_per_epoch * eval_fraction))
     
-    # Save checkpoint every 0.5 epoch (to avoid too many checkpoints)
-    # 每 0.5 个 epoch 保存一次 checkpoint（避免保存太多）
-    save_steps = max(1, int(steps_per_epoch * 0.5))
+    # Save checkpoint: ensure save_steps is a multiple of eval_steps
+    # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
+    # Target: save every ~0.5 epoch, but must be multiple of eval_steps
+    # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
+    target_save_steps = max(1, int(steps_per_epoch * 0.5))
+    # Round up to nearest multiple of eval_steps
+    # 向上取整到最近的 eval_steps 倍数
+    save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps
     
     print(f"\n Training Steps Configuration:")
     print(f"   Steps per epoch:     {steps_per_epoch:,}")
     print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
-    print(f"   Save every:          {save_steps:,} steps (~0.5 epoch)")
+    print(f"   Save every:          {save_steps:,} steps (~{save_steps/steps_per_epoch:.2f} epoch, {save_steps//eval_steps}x eval)")
     
     # Training arguments
     phase2_output = f"{config.output_dir}/phase2_spider"
