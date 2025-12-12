@@ -5,17 +5,25 @@
     "load_in_8bit": false
   },
   "lora": {
-    "r": 32,
-    "alpha": 64,
+    "r": 16,
+    "alpha": 32,
     "dropout": 0.05,
-    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ]
   },
   "training": {
     "wikisql_epochs": 1,
     "spider_epochs": 3,
     "batch_size": 2,
     "gradient_accumulation": 8,
-    "learning_rate": 2e-4,
+    "learning_rate": 0.0002,
     "lr_scheduler": "cosine",
     "warmup_ratio": 0.05,
     "max_seq_length": 1024,
@@ -39,4 +47,3 @@
     "total_limit": 5
   }
 }
-

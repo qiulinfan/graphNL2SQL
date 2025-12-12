@@ -9,9 +9,14 @@ notebooks and scripts.
 Main Functions / 主要功能:
 - generate_sql(): Generate SQL from question and schema / 从问题和模式生成 SQL
 - load_finetuned_model(): Load model with LoRA adapters / 加载带 LoRA 的模型
-- evaluate_model(): Evaluate on dataset with Exact Match / 在数据集上评估精确匹配
+- evaluate_model(): Evaluate on dataset with Exact Match (EM) / 在数据集上评估精确匹配
+- evaluate_with_execution(): Evaluate with both EM and Execution Match (EX) / 同时评估 EM 和执行匹配
 - generate_sql_with_egd(): Execution-Guided Decoding / 执行引导解码
 - evaluate_with_egd(): Evaluate using EGD method / 使用 EGD 方法评估
+
+Metrics / 评估指标:
+- Exact Match (EM): Normalized SQL string comparison / 规范化 SQL 字符串比较
+- Execution Match (EX): Compare execution results on mock DB / 在模拟数据库上比较执行结果
 
 Called by / 调用者:
 - pipeline.ipynb: Testing section / 测试部分
@@ -39,6 +44,8 @@ def generate_sql(
     max_new_tokens: int = 256,
     temperature: float = 0.1,
     do_sample: bool = False,
+    use_egd: bool = False,
+    egd_candidates: int = 5,
 ) -> str:
     """
     Generate SQL from question and schema.
@@ -47,12 +54,14 @@ def generate_sql(
     Function / 功能:
         Core inference function. Formats input as chat prompt, generates SQL
         using the model, and extracts the SQL from the response.
+        Optionally uses EGD for better accuracy.
         核心推理函数。将输入格式化为对话提示，使用模型生成 SQL，并从响应中提取 SQL。
+        可选使用 EGD 以提高准确率。
     
     Called by / 调用者:
         - evaluate_model(): For batch evaluation (批量评估时调用)
+        - evaluate_with_execution(): For EM+EX evaluation (EM+EX 评估时调用)
         - run_quick_test(): For single-sample testing (单样本测试时调用)
-        - generate_sql_candidates(): For EGD candidate generation (EGD 候选生成时调用)
     
     Args / 参数:
         model: The language model (语言模型)
@@ -62,10 +71,22 @@ def generate_sql(
         max_new_tokens: Maximum tokens to generate (最大生成 token 数)
         temperature: Sampling temperature (采样温度)
         do_sample: Whether to use sampling (是否使用采样)
+        use_egd: Whether to use Execution-Guided Decoding (是否使用 EGD)
+        egd_candidates: Number of candidates for EGD (EGD 候选数量)
         
     Returns / 返回:
         str: Generated SQL query (生成的 SQL 查询)
     """
+    # Use EGD if requested
+    # 如果请求则使用 EGD
+    if use_egd:
+        egd_result = generate_sql_with_egd(
+            model, tokenizer, question, schema,
+            num_candidates=egd_candidates,
+            max_new_tokens=max_new_tokens,
+            verbose=False
+        )
+        return egd_result["sql"]
     system_msg = (
         "You are a SQL expert. Given a database schema and a natural language question, "
         "generate the correct SQL query. Output only the SQL query."
@@ -240,6 +261,8 @@ def evaluate_model(
     max_samples: Optional[int] = None,
     max_new_tokens: int = 256,
     verbose: bool = True,
+    use_egd: bool = False,
+    egd_candidates: int = 5,
 ) -> Dict[str, Any]:
     """
     Evaluate model on a dataset using Exact Match metric.
@@ -248,7 +271,9 @@ def evaluate_model(
     Function / 功能:
         Iterates through evaluation data, generates SQL for each example,
         compares with gold SQL using normalized comparison, and computes accuracy.
+        Optionally uses EGD for better accuracy.
         遍历评估数据，为每个样本生成 SQL，使用规范化比较与标准 SQL 对比，计算准确率。
+        可选使用 EGD 以提高准确率。
     
     Called by / 调用者:
         - pipeline.ipynb: Main evaluation in testing section (测试部分的主要评估)
@@ -261,6 +286,8 @@ def evaluate_model(
         max_samples: Maximum samples to evaluate, None=all (最大评估样本数)
         max_new_tokens: Max tokens per generation (每次生成的最大 token 数)
         verbose: Print progress updates (是否打印进度)
+        use_egd: Whether to use Execution-Guided Decoding (是否使用 EGD)
+        egd_candidates: Number of candidates for EGD (EGD 候选数量)
         
     Returns / 返回:
         Dict with keys: accuracy, correct, total, results
@@ -273,15 +300,18 @@ def evaluate_model(
     correct = 0
     
     if verbose:
-        print(f"Evaluating on {len(eval_data)} samples...")
+        mode = "EGD" if use_egd else "Standard"
+        print(f"Evaluating on {len(eval_data)} samples ({mode} mode)...")
     
     for i, example in enumerate(eval_data):
-        # Generate SQL
+        # Generate SQL (with optional EGD)
         pred_sql = generate_sql(
             model, tokenizer,
             example["question"],
             example["schema"],
             max_new_tokens=max_new_tokens,
+            use_egd=use_egd,
+            egd_candidates=egd_candidates,
         )
         
         # Normalize and compare
@@ -310,6 +340,216 @@ def evaluate_model(
     return {
         "accuracy": accuracy,
         "correct": correct,
+        "total": len(eval_data),
+        "results": results,
+    }
+
+
+def compare_execution_results(
+    result1: Any,
+    result2: Any,
+) -> bool:
+    """
+    Compare two SQL execution results for equivalence.
+    比较两个 SQL 执行结果是否等价。
+    
+    Function / 功能:
+        Compares query results as sets (ignoring row order) to determine
+        if two different SQL queries produce equivalent results.
+        将查询结果作为集合比较（忽略行顺序），判断两个不同的 SQL 是否产生等价结果。
+    
+    Called by / 调用者:
+        - evaluate_with_execution(): For execution match evaluation (执行匹配评估)
+    
+    Args / 参数:
+        result1: First execution result (rows as tuples) (第一个执行结果)
+        result2: Second execution result (rows as tuples) (第二个执行结果)
+        
+    Returns / 返回:
+        bool: True if results are equivalent (结果等价返回 True)
+    """
+    if result1 is None or result2 is None:
+        return False
+    
+    # Convert to sets of tuples for order-independent comparison
+    # 转换为元组集合以进行顺序无关的比较
+    try:
+        # Handle case where results might be lists of lists or tuples
+        set1 = set(tuple(row) if isinstance(row, (list, tuple)) else (row,) for row in result1)
+        set2 = set(tuple(row) if isinstance(row, (list, tuple)) else (row,) for row in result2)
+        return set1 == set2
+    except (TypeError, ValueError):
+        # If unhashable, fall back to sorted comparison
+        # 如果不可哈希，退回到排序比较
+        try:
+            sorted1 = sorted([str(row) for row in result1])
+            sorted2 = sorted([str(row) for row in result2])
+            return sorted1 == sorted2
+        except:
+            return False
+
+
+def evaluate_with_execution(
+    model,
+    tokenizer,
+    eval_data: List[Dict],
+    max_samples: Optional[int] = None,
+    max_new_tokens: int = 256,
+    verbose: bool = True,
+    use_egd: bool = False,
+    egd_candidates: int = 5,
+) -> Dict[str, Any]:
+    """
+    Evaluate model using both Exact Match (EM) and Execution Match (EX).
+    使用精确匹配 (EM) 和执行匹配 (EX) 评估模型。
+    
+    Function / 功能:
+        Evaluates generated SQL queries using two metrics:
+        使用两种指标评估生成的 SQL 查询：
+        1. Exact Match (EM): Normalized string comparison (精确匹配：规范化字符串比较)
+        2. Execution Match (EX): Compare execution results on mock DB (执行匹配：在模拟数据库上比较执行结果)
+        
+        EX is more forgiving as different SQL can produce same results.
+        执行匹配更宽容，因为不同的 SQL 可以产生相同的结果。
+        
+        Optionally uses EGD for better accuracy.
+        可选使用 EGD 以提高准确率。
+    
+    Called by / 调用者:
+        - pipeline.ipynb: Comprehensive evaluation (综合评估)
+    
+    Args / 参数:
+        model: The language model (语言模型)
+        tokenizer: The tokenizer (分词器)
+        eval_data: List of dicts with 'question', 'schema', 'sql' keys
+                   包含 question, schema, sql 键的字典列表
+        max_samples: Maximum samples to evaluate (最大评估样本数)
+        max_new_tokens: Max tokens per generation (每次生成的最大 token 数)
+        verbose: Print progress updates (是否打印进度)
+        use_egd: Whether to use Execution-Guided Decoding (是否使用 EGD)
+        egd_candidates: Number of candidates for EGD (EGD 候选数量)
+        
+    Returns / 返回:
+        Dict with keys:
+        返回字典包含：
+        - exact_match_accuracy: EM accuracy (精确匹配准确率)
+        - execution_match_accuracy: EX accuracy (执行匹配准确率)
+        - exact_match_count: Number of EM correct (精确匹配正确数)
+        - execution_match_count: Number of EX correct (执行匹配正确数)
+        - total: Total samples (总样本数)
+        - results: Detailed per-sample results (每个样本的详细结果)
+    """
+    try:
+        import duckdb
+        has_duckdb = True
+    except ImportError:
+        has_duckdb = False
+        if verbose:
+            print("Warning: DuckDB not installed. Execution match will be skipped.")
+            print("Install with: pip install duckdb")
+    
+    if max_samples:
+        eval_data = eval_data[:max_samples]
+    
+    results = []
+    em_correct = 0  # Exact match count
+    ex_correct = 0  # Execution match count
+    exec_errors = 0  # Count of execution failures
+    
+    if verbose:
+        mode = "EGD" if use_egd else "Standard"
+        print(f"Evaluating {len(eval_data)} samples with EM + EX ({mode} mode)...")
+        print("-" * 60)
+    
+    for i, example in enumerate(eval_data):
+        # Generate SQL (with optional EGD)
+        pred_sql = generate_sql(
+            model, tokenizer,
+            example["question"],
+            example["schema"],
+            max_new_tokens=max_new_tokens,
+            use_egd=use_egd,
+            egd_candidates=egd_candidates,
+        )
+        
+        gold_sql = example["sql"]
+        schema = example["schema"]
+        
+        # Exact Match (EM)
+        gold_norm = normalize_sql(gold_sql)
+        pred_norm = normalize_sql(pred_sql)
+        is_em = gold_norm == pred_norm
+        
+        if is_em:
+            em_correct += 1
+        
+        # Execution Match (EX)
+        is_ex = False
+        gold_result = None
+        pred_result = None
+        gold_error = None
+        pred_error = None
+        
+        if has_duckdb:
+            # Execute gold SQL
+            gold_success, gold_result, gold_error = execute_sql_on_schema(gold_sql, schema)
+            
+            # Execute predicted SQL
+            pred_success, pred_result, pred_error = execute_sql_on_schema(pred_sql, schema)
+            
+            if gold_success and pred_success:
+                # Compare results
+                is_ex = compare_execution_results(gold_result, pred_result)
+            elif not gold_success and not pred_success:
+                # Both failed - could be schema parsing issue
+                exec_errors += 1
+            else:
+                # One succeeded, one failed - not a match
+                pass
+        
+        if is_ex:
+            ex_correct += 1
+        
+        result_entry = {
+            "question": example["question"],
+            "gold_sql": gold_sql,
+            "pred_sql": pred_sql,
+            "exact_match": is_em,
+            "execution_match": is_ex,
+            "gold_exec_result": gold_result,
+            "pred_exec_result": pred_result,
+            "gold_exec_error": gold_error,
+            "pred_exec_error": pred_error,
+        }
+        results.append(result_entry)
+        
+        if verbose and (i + 1) % 10 == 0:
+            em_acc = 100 * em_correct / (i + 1)
+            ex_acc = 100 * ex_correct / (i + 1)
+            print(f"  [{i+1}/{len(eval_data)}] EM: {em_acc:.1f}%, EX: {ex_acc:.1f}%")
+    
+    em_accuracy = 100 * em_correct / len(eval_data) if eval_data else 0
+    ex_accuracy = 100 * ex_correct / len(eval_data) if eval_data else 0
+    
+    if verbose:
+        print("-" * 60)
+        print(f"Final Results:")
+        print(f"  Exact Match (EM):     {em_accuracy:.2f}% ({em_correct}/{len(eval_data)})")
+        print(f"  Execution Match (EX): {ex_accuracy:.2f}% ({ex_correct}/{len(eval_data)})")
+        if exec_errors > 0:
+            print(f"  Execution Errors:     {exec_errors} (schema parsing issues)")
+        
+        # Show improvement from EX over EM
+        ex_only = sum(1 for r in results if r["execution_match"] and not r["exact_match"])
+        if ex_only > 0:
+            print(f"\n  EX found {ex_only} additional correct queries beyond EM")
+    
+    return {
+        "exact_match_accuracy": em_accuracy,
+        "execution_match_accuracy": ex_accuracy,
+        "exact_match_count": em_correct,
+        "execution_match_count": ex_correct,
+        "execution_errors": exec_errors,
         "total": len(eval_data),
         "results": results,
     }
@@ -981,77 +1221,134 @@ def evaluate_with_egd(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Evaluate model using Execution-Guided Decoding.
+    Evaluate model using Execution-Guided Decoding with EM and EX metrics.
+    使用执行引导解码评估模型，包含精确匹配和执行匹配指标。
     
-    Args:
-        model: The language model
-        tokenizer: The tokenizer
-        eval_data: Evaluation dataset
-        max_samples: Maximum samples to evaluate
-        num_candidates: Candidates per sample
-        verbose: Print progress
+    Function / 功能:
+        Combines EGD generation with comprehensive evaluation:
+        结合 EGD 生成与综合评估：
+        1. Generate SQL using EGD (k candidates, select best executable)
+           使用 EGD 生成 SQL（k 个候选，选择最佳可执行的）
+        2. Compute Exact Match (EM) - string comparison
+           计算精确匹配 (EM) - 字符串比较
+        3. Compute Execution Match (EX) - result comparison
+           计算执行匹配 (EX) - 结果比较
+    
+    Called by / 调用者:
+        - pipeline.ipynb: EGD evaluation section (EGD 评估部分)
+    
+    Args / 参数:
+        model: The language model (语言模型)
+        tokenizer: The tokenizer (分词器)
+        eval_data: Evaluation dataset (评估数据集)
+        max_samples: Maximum samples to evaluate (最大评估样本数)
+        num_candidates: Candidates per sample (每个样本的候选数)
+        verbose: Print progress (是否打印进度)
         
-    Returns:
-        Evaluation results with EGD metrics
+    Returns / 返回:
+        Dict with EM accuracy, EX accuracy, execution rate, and detailed results
+        包含 EM 准确率、EX 准确率、执行率和详细结果的字典
     """
+    try:
+        import duckdb
+        has_duckdb = True
+    except ImportError:
+        has_duckdb = False
+        if verbose:
+            print("Warning: DuckDB not installed. Execution match will be skipped.")
+    
     if max_samples:
         eval_data = eval_data[:max_samples]
     
     results = []
-    correct = 0
-    egd_improved = 0  # Cases where EGD found executable SQL
+    em_correct = 0       # Exact match count
+    ex_correct = 0       # Execution match count
+    egd_executed = 0     # Cases where EGD found executable SQL
     
     if verbose:
         print(f"\nEvaluating {len(eval_data)} samples with EGD (k={num_candidates})...")
+        print("-" * 60)
     
     for i, example in enumerate(eval_data):
+        gold_sql = example["sql"]
+        schema = example["schema"]
+        
         # Generate with EGD
         egd_result = generate_sql_with_egd(
             model, tokenizer,
             example["question"],
-            example["schema"],
+            schema,
             num_candidates=num_candidates,
             verbose=False
         )
         
         pred_sql = egd_result["sql"]
         
-        # Compare with gold
-        gold_norm = normalize_sql(example["sql"])
+        # Exact Match (EM)
+        gold_norm = normalize_sql(gold_sql)
         pred_norm = normalize_sql(pred_sql)
-        is_match = gold_norm == pred_norm
+        is_em = gold_norm == pred_norm
         
-        if is_match:
-            correct += 1
+        if is_em:
+            em_correct += 1
         
         if egd_result["executed"]:
-            egd_improved += 1
+            egd_executed += 1
+        
+        # Execution Match (EX) - compare gold vs pred results
+        is_ex = False
+        gold_result = None
+        pred_result = None
+        
+        if has_duckdb:
+            gold_success, gold_result, _ = execute_sql_on_schema(gold_sql, schema)
+            pred_success, pred_result, _ = execute_sql_on_schema(pred_sql, schema)
+            
+            if gold_success and pred_success:
+                is_ex = compare_execution_results(gold_result, pred_result)
+        
+        if is_ex:
+            ex_correct += 1
         
         results.append({
             "question": example["question"],
-            "gold_sql": example["sql"],
+            "gold_sql": gold_sql,
             "pred_sql": pred_sql,
-            "match": is_match,
+            "exact_match": is_em,
+            "execution_match": is_ex,
             "egd_method": egd_result["method"],
             "egd_executed": egd_result["executed"],
         })
         
         if verbose and (i + 1) % 10 == 0:
-            print(f"  [{i+1}/{len(eval_data)}] EM: {100*correct/(i+1):.1f}%, Executed: {100*egd_improved/(i+1):.1f}%")
+            em_acc = 100 * em_correct / (i + 1)
+            ex_acc = 100 * ex_correct / (i + 1)
+            exec_rate = 100 * egd_executed / (i + 1)
+            print(f"  [{i+1}/{len(eval_data)}] EM: {em_acc:.1f}%, EX: {ex_acc:.1f}%, Exec: {exec_rate:.1f}%")
     
-    accuracy = 100 * correct / len(eval_data) if eval_data else 0
-    exec_rate = 100 * egd_improved / len(eval_data) if eval_data else 0
+    em_accuracy = 100 * em_correct / len(eval_data) if eval_data else 0
+    ex_accuracy = 100 * ex_correct / len(eval_data) if eval_data else 0
+    exec_rate = 100 * egd_executed / len(eval_data) if eval_data else 0
     
     if verbose:
-        print(f"\n Final Results:")
-        print(f"  Exact Match: {accuracy:.2f}%")
-        print(f"  Execution Rate: {exec_rate:.2f}%")
+        print("-" * 60)
+        print(f"Final Results:")
+        print(f"  Exact Match (EM):     {em_accuracy:.2f}% ({em_correct}/{len(eval_data)})")
+        print(f"  Execution Match (EX): {ex_accuracy:.2f}% ({ex_correct}/{len(eval_data)})")
+        print(f"  EGD Execution Rate:   {exec_rate:.2f}% ({egd_executed}/{len(eval_data)})")
+        
+        # Show improvement
+        ex_only = sum(1 for r in results if r["execution_match"] and not r["exact_match"])
+        if ex_only > 0:
+            print(f"\n  EX found {ex_only} additional correct queries beyond EM")
     
     return {
-        "accuracy": accuracy,
+        "exact_match_accuracy": em_accuracy,
+        "execution_match_accuracy": ex_accuracy,
         "execution_rate": exec_rate,
-        "correct": correct,
-        "executed": egd_improved,
+        "exact_match_count": em_correct,
+        "execution_match_count": ex_correct,
+        "egd_executed_count": egd_executed,
         "total": len(eval_data),
         "results": results,
     }
