@@ -478,13 +478,36 @@ def load_model_and_tokenizer(config: TrainingConfig) -> Tuple[Any, Any]:
     
     # Load model
     print("Loading model (this may take a few minutes)...")
-    model = AutoModelForCausalLM.from_pretrained(
-        config.model_name,
-        quantization_config=quantization_config,
-        torch_dtype=torch.bfloat16 if config.use_bf16 else torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
-    )
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            config.model_name,
+            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16 if config.use_bf16 else torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    except ValueError as e:
+        if "CPU or the disk" in str(e) and config.load_in_4bit:
+            print("\n⚠️  Warning: 4-bit quantization requires all modules on GPU.")
+            print("   Trying with explicit device_map='cuda'...")
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    config.model_name,
+                    quantization_config=quantization_config,
+                    torch_dtype=torch.bfloat16 if config.use_bf16 else torch.float16,
+                    device_map="cuda",  # Force all to GPU
+                    trust_remote_code=True,
+                )
+            except Exception as e2:
+                print(f"\n❌ Error: {e2}")
+                print("\n💡 Solutions:")
+                print("   1. Use 8-bit quantization instead (supports CPU offload)")
+                print("   2. Reduce batch_size or max_seq_length")
+                print("   3. Use a smaller model")
+                print("   4. Free up GPU memory")
+                raise
+        else:
+            raise
     
     # Prepare for k-bit training
     if config.load_in_4bit or config.load_in_8bit:
