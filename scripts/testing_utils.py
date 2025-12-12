@@ -484,13 +484,17 @@ def evaluate_with_execution(
             em_correct += 1
         
         # Execution Match (EX)
-        is_ex = False
+        # If EM is True, EX should also be True (same SQL = same results)
+        # 如果 EM 为 True，EX 也应该为 True（相同 SQL = 相同结果）
+        is_ex = is_em  # Start with EM result
         gold_result = None
         pred_result = None
         gold_error = None
         pred_error = None
         
-        if has_duckdb:
+        # Only try execution if EM is False (to find additional matches)
+        # 只有当 EM 为 False 时才尝试执行（以发现额外的匹配）
+        if not is_em and has_duckdb:
             # Execute gold SQL
             gold_success, gold_result, gold_error = execute_sql_on_schema(gold_sql, schema)
             
@@ -503,9 +507,12 @@ def evaluate_with_execution(
             elif not gold_success and not pred_success:
                 # Both failed - could be schema parsing issue
                 exec_errors += 1
-            else:
-                # One succeeded, one failed - not a match
-                pass
+                # Store error info for debugging
+                if verbose and exec_errors <= 3:  # Only show first few errors
+                    print(f"    [Debug] Both SQLs failed execution:")
+                    print(f"      Gold error: {gold_error[:100] if gold_error else 'None'}")
+                    print(f"      Pred error: {pred_error[:100] if pred_error else 'None'}")
+            # else: One succeeded, one failed - not a match (is_ex stays False)
         
         if is_ex:
             ex_correct += 1
@@ -1010,6 +1017,7 @@ def _create_tables_from_schema(conn, schema: str, sample_data: Optional[Dict] = 
     Create tables in DuckDB from schema text.
     
     This parses the [TABLES] section and creates corresponding tables.
+    Enhanced to handle edge cases and provide better error messages.
     """
     try:
         lines = schema.split("\n")
@@ -1022,11 +1030,15 @@ def _create_tables_from_schema(conn, schema: str, sample_data: Optional[Dict] = 
         for line in lines:
             line = line.strip()
             
+            # Skip empty lines
+            if not line:
+                continue
+            
             if line == "[TABLES]":
                 in_tables_section = True
                 continue
             elif line.startswith("[") and line.endswith("]"):
-                # Save previous table
+                # Save previous table before leaving section
                 if current_table and columns:
                     tables[current_table] = columns
                 in_tables_section = False
@@ -1042,38 +1054,96 @@ def _create_tables_from_schema(conn, schema: str, sample_data: Optional[Dict] = 
                 if current_table and columns:
                     tables[current_table] = columns
                 current_table = line[:-1].strip()
+                # Handle table names with quotes or special characters
+                if current_table.startswith('"') and current_table.endswith('"'):
+                    current_table = current_table[1:-1]
                 columns = []
             elif line and current_table:
-                # Parse column: "column_name (PK)" or "column_name (FK)" or just "column_name"
-                col_name = line.split("(")[0].strip()
-                if col_name:
+                # Parse column: handle various formats
+                # "column_name (PK)" or "column_name (FK)" or "    column_name" or just "column_name"
+                # Remove leading indentation (4 spaces or tabs)
+                col_line = line.lstrip(" \t")
+                
+                # Extract column name (before any parentheses or markers)
+                if "(" in col_line:
+                    col_name = col_line.split("(")[0].strip()
+                else:
+                    col_name = col_line.strip()
+                
+                # Handle quoted column names
+                if col_name.startswith('"') and col_name.endswith('"'):
+                    col_name = col_name[1:-1]
+                
+                # Skip if empty or looks like a comment
+                if col_name and not col_name.startswith("#") and not col_name.startswith("--"):
                     columns.append(col_name)
         
         # Save last table
         if current_table and columns:
             tables[current_table] = columns
         
+        if len(tables) == 0:
+            # Try fallback: look for any table-like patterns
+            # This handles schemas that might not have [TABLES] section
+            for line in lines:
+                line = line.strip()
+                if ":" in line and not line.startswith("[") and not line.startswith("#"):
+                    parts = line.split(":")
+                    if len(parts) == 2:
+                        table_name = parts[0].strip()
+                        col_info = parts[1].strip()
+                        if table_name and col_info:
+                            if table_name not in tables:
+                                tables[table_name] = []
+                            # Try to extract column name
+                            col_name = col_info.split("(")[0].strip()
+                            if col_name:
+                                tables[table_name].append(col_name)
+        
+        if len(tables) == 0:
+            return False
+        
         # Create tables in DuckDB
         for table_name, cols in tables.items():
-            # Create table with TEXT columns (simplest approach)
-            col_defs = ", ".join([f'"{col}" TEXT' for col in cols])
-            create_sql = f'CREATE TABLE "{table_name}" ({col_defs})'
-            conn.execute(create_sql)
-            
-            # Insert sample data if provided
-            if sample_data and table_name in sample_data:
-                for row in sample_data[table_name]:
-                    values = ", ".join([f"'{row.get(col, '')}'" for col in cols])
-                    insert_sql = f'INSERT INTO "{table_name}" VALUES ({values})'
-                    try:
-                        conn.execute(insert_sql)
-                    except:
-                        pass  # Skip invalid rows
+            if not cols:
+                # Skip tables with no columns
+                continue
+                
+            try:
+                # Create table with TEXT columns (simplest approach)
+                # Escape table and column names properly
+                safe_table_name = table_name.replace('"', '""')
+                col_defs = ", ".join([f'"{col.replace(chr(34), chr(34)+chr(34))}" TEXT' for col in cols])
+                create_sql = f'CREATE TABLE "{safe_table_name}" ({col_defs})'
+                conn.execute(create_sql)
+                
+                # Insert sample data if provided
+                if sample_data and table_name in sample_data:
+                    for row in sample_data[table_name]:
+                        try:
+                            # Build values list, handling missing columns
+                            values = []
+                            for col in cols:
+                                val = row.get(col, '')
+                                # Escape single quotes in values
+                                val_str = str(val).replace("'", "''")
+                                values.append(f"'{val_str}'")
+                            if values:
+                                values_str = ", ".join(values)
+                                insert_sql = f'INSERT INTO "{safe_table_name}" VALUES ({values_str})'
+                                conn.execute(insert_sql)
+                        except Exception as e:
+                            # Skip invalid rows silently
+                            pass
+            except Exception as e:
+                # Log but continue with other tables
+                print(f"Warning: Failed to create table '{table_name}': {e}")
+                continue
         
-        return len(tables) > 0
+        return len([t for t in tables.values() if t]) > 0
         
     except Exception as e:
-        print(f"Error creating tables: {e}")
+        print(f"Error creating tables from schema: {e}")
         return False
 
 
