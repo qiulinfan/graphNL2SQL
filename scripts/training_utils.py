@@ -146,8 +146,8 @@ def load_config_from_json(config_path: str = "config.json") -> TrainingConfig:
         warmup_ratio=data["training"]["warmup_ratio"],
         max_seq_length=data["training"]["max_seq_length"],
         gradient_checkpointing=data["training"]["gradient_checkpointing"],
-        use_bf16=data["training"]["use_bf16"],
-        use_fp16=data["training"]["use_fp16"],
+        use_bf16=data["training"].get("use_bf16", False),
+        use_fp16=data["training"].get("use_fp16", False),
         # Data
         data_dir=data["data"]["data_dir"],
         output_dir=data["data"]["output_dir"],
