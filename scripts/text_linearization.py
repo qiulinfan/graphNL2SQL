@@ -1,13 +1,20 @@
 """
 Text Linearization for Schema Graphs.
+模式图的文本线性化模块
 
 This module converts Hybrid Graph representations into text format
 that can be fed to LLMs for NL2SQL tasks.
+本模块将混合图表示转换为可供 LLM 使用的文本格式。
 
-Supports multiple linearization styles:
-- basic: Simple table(columns) format
-- detailed: Includes types, PK/FK markers
-- typed: Full type annotations as per README Extension 2
+Supports multiple linearization styles / 支持多种线性化样式:
+- basic: Simple table(columns) format / 简单的表(列)格式
+- detailed: Includes types, PK/FK markers / 包含类型、主键/外键标记
+- typed: Full type annotations / 完整类型注解
+- structured: Section tags for clear boundaries / 带节段标签的清晰结构
+
+Called by / 调用者:
+- prepare_training_data.py: Creates training prompts (创建训练提示)
+- training_utils.py: Formats schema for model input (格式化模式作为模型输入)
 """
 
 from schema_graph import SchemaGraph, ColumnNode, TableNode, EdgeType

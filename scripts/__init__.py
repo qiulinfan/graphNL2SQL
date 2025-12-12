@@ -48,6 +48,11 @@ from .testing_utils import (
     evaluate_model,
     run_quick_test,
     run_interactive_test,
+    # EGD functions
+    generate_sql_candidates,
+    generate_sql_with_egd,
+    evaluate_with_egd,
+    validate_sql_syntax,
 )
 
 __all__ = [

@@ -1,12 +1,21 @@
 """
 Hybrid Graph Schema Representation for NL2SQL.
+NL2SQL 混合图模式表示模块
 
 This module implements the Table&Column-level Hybrid Graph design:
+本模块实现表-列级别的混合图设计：
+
 - Nodes: Tables and Columns
+  节点：表和列
 - Edges:
-  - table-column containment edges
-  - foreign key connections between columns
-  - table-table edges for cross-table relationships
+  边：
+  - table-column containment edges (表-列包含边)
+  - foreign key connections between columns (列之间的外键连接)
+  - table-table edges for cross-table relationships (跨表关系边)
+
+Called by / 调用者:
+- text_linearization.py: Converts graph to text format (将图转换为文本格式)
+- prepare_training_data.py: Creates training data (创建训练数据)
 """
 
 from dataclasses import dataclass, field
@@ -169,17 +178,26 @@ class SchemaGraph:
 def parse_wikisql_schema(table_data: dict) -> SchemaGraph:
     """
     Parse WikiSQL table format into SchemaGraph.
-
-    WikiSQL table format:
-    {
-        "id": "1-1000181-1",
-        "header": ["Player", "No.", "Nationality", ...],
-        "types": ["text", "text", "text", ...],
-        "rows": [...],
-        "page_title": "Some Wikipedia Page"  (optional)
-    }
-
+    将 WikiSQL 表格式解析为 SchemaGraph。
+    
+    Function / 功能:
+        Converts WikiSQL raw table data to our graph representation.
+        将 WikiSQL 原始表数据转换为图表示。
+    
+    Called by / 调用者:
+        - prepare_training_data.py: When processing WikiSQL dataset
+          处理 WikiSQL 数据集时调用
+    
+    Args / 参数:
+        table_data: WikiSQL table dict with keys: id, header, types, rows
+                    WikiSQL 表字典，包含 id, header, types, rows 等键
+    
+    Returns / 返回:
+        SchemaGraph: Graph representation of the table schema
+                     表模式的图表示
+    
     Note: WikiSQL has single-table queries, no foreign keys.
+    注意：WikiSQL 只有单表查询，没有外键。
     """
     table_id = table_data.get("id", "table")
     headers = table_data.get("header", [])
@@ -217,15 +235,32 @@ def parse_wikisql_schema(table_data: dict) -> SchemaGraph:
 def parse_spider_schema(schema_data: dict) -> SchemaGraph:
     """
     Parse Spider schema format into SchemaGraph.
-
+    将 Spider 模式格式解析为 SchemaGraph。
+    
+    Function / 功能:
+        Converts Spider database schema (with multiple tables and foreign keys) 
+        to our hybrid graph representation.
+        将 Spider 数据库模式（包含多表和外键）转换为混合图表示。
+    
+    Called by / 调用者:
+        - prepare_training_data.py: When processing Spider dataset
+          处理 Spider 数据集时调用
+    
+    Args / 参数:
+        schema_data: Spider schema dict from tables.json
+                     来自 tables.json 的 Spider 模式字典
+    
+    Returns / 返回:
+        SchemaGraph: Graph with tables, columns, and FK relationships
+                     包含表、列和外键关系的图
+    
     Spider schema format (from tables.json):
     {
         "db_id": "concert_singer",
-        "table_names_original": ["stadium", "singer", "concert", "singer_in_concert"],
-        "column_names_original": [[-1, "*"], [0, "Stadium_ID"], [0, "Location"], ...],
-        "column_types": ["text", "number", "text", ...],
-        "primary_keys": [1, 5, 11, 14],  # indices into column_names_original
-        "foreign_keys": [[12, 1], [13, 5], ...]  # [from_col_idx, to_col_idx]
+        "table_names_original": ["stadium", "singer", ...],
+        "column_names_original": [[-1, "*"], [0, "Stadium_ID"], ...],
+        "primary_keys": [1, 5, 11, 14],
+        "foreign_keys": [[12, 1], [13, 5], ...]
     }
     """
     db_id = schema_data.get("db_id", "unknown")

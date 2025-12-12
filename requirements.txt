@@ -12,6 +12,9 @@ datasets>=2.14.0
 # Database execution
 duckdb>=0.9.0
 
+# SQL parsing and validation
+sqlparse>=0.4.0
+
 # Semantic similarity for semantic links
 sentence-transformers>=2.2.0
 

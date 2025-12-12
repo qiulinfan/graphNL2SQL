@@ -1,13 +1,22 @@
 """
 Training Utilities for NL2SQL Fine-tuning.
+NL2SQL 微调训练工具模块
 
 This module encapsulates all training-related functions for use in notebooks
-and scripts. It provides a clean interface for:
-- Loading datasets (WikiSQL, Spider)
-- Model and tokenizer loading with quantization
-- LoRA configuration and setup
-- Two-phase training (WikiSQL warmup + Spider main training)
-- WandB integration
+and scripts.
+本模块封装了所有训练相关函数，供 notebook 和脚本使用。
+
+Main Functions / 主要功能:
+- load_config_from_json(): Load config from JSON file / 从 JSON 文件加载配置
+- load_datasets(): Load WikiSQL and Spider datasets / 加载数据集
+- load_model_and_tokenizer(): Load LLM with quantization / 加载量化后的 LLM
+- setup_lora(): Configure LoRA adapters / 配置 LoRA 适配器
+- train_phase1_wikisql(): WikiSQL warmup training / WikiSQL 预热训练
+- train_phase2_spider(): Spider main training / Spider 主训练
+
+Called by / 调用者:
+- pipeline.ipynb: Main training notebook / 主训练 notebook
+- train.py: Command-line training script / 命令行训练脚本
 """
 
 import json
@@ -97,12 +106,21 @@ class TrainingConfig:
 def load_config_from_json(config_path: str = "config.json") -> TrainingConfig:
     """
     Load training configuration from JSON file.
+    从 JSON 文件加载训练配置。
     
-    Args:
-        config_path: Path to config.json file
+    Function / 功能:
+        Reads config.json and creates a TrainingConfig object with all
+        hyperparameters for model, LoRA, training, and WandB.
+        读取 config.json 并创建包含模型、LoRA、训练和 WandB 所有超参数的配置对象。
+    
+    Called by / 调用者:
+        - pipeline.ipynb: Load config before training (训练前加载配置)
+    
+    Args / 参数:
+        config_path: Path to config.json file (配置文件路径)
         
-    Returns:
-        TrainingConfig object
+    Returns / 返回:
+        TrainingConfig: Configuration object with all settings (包含所有设置的配置对象)
     """
     with open(config_path, 'r') as f:
         data = json.load(f)
@@ -767,7 +785,7 @@ def train_phase2_spider(
         warmup_ratio=config.warmup_ratio,
         weight_decay=0.01,
         logging_steps=10,
-        eval_strategy="steps",
+        eval_strategy=config.save_strategy,  # Must match save_strategy for load_best_model_at_end
         eval_steps=200,
         save_strategy=config.save_strategy,
         save_total_limit=config.save_total_limit,
