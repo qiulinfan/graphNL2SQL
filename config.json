@@ -29,7 +29,8 @@
     "max_seq_length": 1024,
     "gradient_checkpointing": true,
     "use_bf16": true,
-    "use_fp16": false
+    "use_fp16": false,
+    "eval_every_epoch_fraction": 0.1
   },
   "data": {
     "data_dir": "./training_data",

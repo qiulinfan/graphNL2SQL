@@ -1179,7 +1179,7 @@ def generate_sql_with_egd(
     schema: str,
     num_candidates: int = 5,
     max_new_tokens: int = 256,
-    temperature: float = 0.7,
+    temperature: float = 0.3,  # Reduced from 0.7 to improve quality
     sample_data: Optional[Dict[str, List[Dict]]] = None,
     verbose: bool = True,
 ) -> Dict[str, Any]:
@@ -1283,20 +1283,43 @@ def generate_sql_with_egd(
             print(f"  [{i+1}] {status}: {sql[:60]}...")
     
     # Step 3: Select best candidate
-    # Priority: executed (highest score) > syntax_valid (highest score) > highest_score
-    if executed_candidates:
-        # Select executed candidate with highest score
-        executed_candidates.sort(key=lambda x: x[1], reverse=True)
-        selected_sql = executed_candidates[0][0]
-        method = "executed"
-    elif syntax_valid_candidates:
-        # Select syntax-valid candidate with highest score
-        syntax_valid_candidates.sort(key=lambda x: x[1], reverse=True)
-        selected_sql = syntax_valid_candidates[0][0]
-        method = "syntax_valid"
-    elif candidates:
-        selected_sql = candidates[0][0]  # Highest score
-        method = "highest_score"
+    # Priority: 
+    #   1. First candidate (greedy) if syntax valid (highest quality)
+    #   2. Executed candidate with highest score
+    #   3. Syntax-valid candidate with highest score
+    #   4. Highest score candidate
+    # 优先级：
+    #   1. 第一个候选（贪婪解码）如果语法正确（最高质量）
+    #   2. 可执行的候选中分数最高的
+    #   3. 语法正确的候选中分数最高的
+    #   4. 分数最高的候选
+    
+    # Check if first candidate (greedy, highest quality) is syntax valid
+    # 检查第一个候选（贪婪解码，最高质量）是否语法正确
+    if candidates and len(candidates) > 0:
+        first_sql, first_score = candidates[0]
+        # Find the result for first candidate
+        first_result = next((r for r in candidate_results if r["sql"] == first_sql), None)
+        if first_result and first_result["syntax_valid"]:
+            # Prefer first candidate if it's syntax valid (even if execution failed)
+            # 如果第一个候选语法正确，优先选择它（即使执行失败）
+            # Execution failure might be due to schema parsing issues, not SQL correctness
+            # 执行失败可能是由于 schema 解析问题，而不是 SQL 正确性问题
+            selected_sql = first_sql
+            method = "first_valid" if first_result["executed"] else "first_syntax_valid"
+        elif executed_candidates:
+            # Select executed candidate with highest score
+            executed_candidates.sort(key=lambda x: x[1], reverse=True)
+            selected_sql = executed_candidates[0][0]
+            method = "executed"
+        elif syntax_valid_candidates:
+            # Select syntax-valid candidate with highest score
+            syntax_valid_candidates.sort(key=lambda x: x[1], reverse=True)
+            selected_sql = syntax_valid_candidates[0][0]
+            method = "syntax_valid"
+        else:
+            selected_sql = candidates[0][0]  # Highest score
+            method = "highest_score"
     else:
         selected_sql = ""
         method = "none"

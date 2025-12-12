@@ -98,6 +98,10 @@ class TrainingConfig:
     save_strategy: str = "epoch"
     save_total_limit: int = 3
     
+    # Evaluation frequency (as fraction of epoch, e.g., 0.1 = every 0.1 epoch)
+    # 验证频率（以 epoch 的分数表示，例如 0.1 = 每 0.1 个 epoch）
+    eval_every_epoch_fraction: float = 0.1
+    
     # WandB
     use_wandb: bool = True
     wandb_project: str = "nl2sql-finetuning"
@@ -160,6 +164,8 @@ def load_config_from_json(config_path: str = "config.json") -> TrainingConfig:
         # Save
         save_strategy=data["save"]["strategy"],
         save_total_limit=data["save"]["total_limit"],
+        # Evaluation frequency
+        eval_every_epoch_fraction=data.get("training", {}).get("eval_every_epoch_fraction", 0.1),
     )
 
 
@@ -195,6 +201,7 @@ def save_config_to_json(config: TrainingConfig, config_path: str = "config.json"
             "gradient_checkpointing": config.gradient_checkpointing,
             "use_bf16": config.use_bf16,
             "use_fp16": config.use_fp16,
+            "eval_every_epoch_fraction": config.eval_every_epoch_fraction,
         },
         "data": {
             "data_dir": config.data_dir,
@@ -675,9 +682,10 @@ def train_phase1_wikisql(
     if steps_per_epoch == 0:
         steps_per_epoch = 1
     
-    # Evaluation every 0.1 epoch (10 times per epoch)
-    # 每 0.1 个 epoch 验证一次（每个 epoch 验证 10 次）
-    eval_steps = max(1, int(steps_per_epoch * 0.1))
+    # Evaluation frequency from config (default 0.1 epoch)
+    # 从配置读取验证频率（默认 0.1 epoch）
+    eval_fraction = getattr(config, 'eval_every_epoch_fraction', 0.1)
+    eval_steps = max(1, int(steps_per_epoch * eval_fraction))
     
     # Save checkpoint every 0.5 epoch (to avoid too many checkpoints)
     # 每 0.5 个 epoch 保存一次 checkpoint（避免保存太多）
@@ -685,7 +693,7 @@ def train_phase1_wikisql(
     
     print(f"\n Training Steps Configuration:")
     print(f"   Steps per epoch:     {steps_per_epoch:,}")
-    print(f"   Eval every:          {eval_steps:,} steps (~0.1 epoch)")
+    print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
     print(f"   Save every:          {save_steps:,} steps (~0.5 epoch)")
     
     # Training arguments
@@ -802,9 +810,10 @@ def train_phase2_spider(
     if steps_per_epoch == 0:
         steps_per_epoch = 1
     
-    # Evaluation every 0.1 epoch (10 times per epoch)
-    # 每 0.1 个 epoch 验证一次（每个 epoch 验证 10 次）
-    eval_steps = max(1, int(steps_per_epoch * 0.1))
+    # Evaluation frequency from config (default 0.1 epoch)
+    # 从配置读取验证频率（默认 0.1 epoch）
+    eval_fraction = getattr(config, 'eval_every_epoch_fraction', 0.1)
+    eval_steps = max(1, int(steps_per_epoch * eval_fraction))
     
     # Save checkpoint every 0.5 epoch (to avoid too many checkpoints)
     # 每 0.5 个 epoch 保存一次 checkpoint（避免保存太多）
@@ -812,7 +821,7 @@ def train_phase2_spider(
     
     print(f"\n Training Steps Configuration:")
     print(f"   Steps per epoch:     {steps_per_epoch:,}")
-    print(f"   Eval every:          {eval_steps:,} steps (~0.1 epoch)")
+    print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
     print(f"   Save every:          {save_steps:,} steps (~0.5 epoch)")
     
     # Training arguments
