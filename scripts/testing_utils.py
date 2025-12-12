@@ -830,7 +830,7 @@ def generate_sql_candidates(
     schema: str,
     num_candidates: int = 5,
     max_new_tokens: int = 256,
-    temperature: float = 0.7,
+    temperature: float = 0.3,  # Reduced from 0.7 to improve quality
 ) -> List[Tuple[str, float]]:
     """
     Generate multiple SQL candidates using sampling.
@@ -882,20 +882,46 @@ def generate_sql_candidates(
     candidates = []
     
     with torch.no_grad():
-        # Generate multiple candidates using sampling
-        outputs = model.generate(
+        # Strategy: First candidate uses greedy (best quality), rest use sampling (diversity)
+        # 策略：第一个候选使用贪婪解码（最佳质量），其余使用采样（多样性）
+        
+        # Generate first candidate with greedy decoding (temperature=0, do_sample=False)
+        # 使用贪婪解码生成第一个候选（最高质量）
+        outputs_greedy = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            do_sample=True,
-            num_return_sequences=num_candidates,
+            temperature=0.0,
+            do_sample=False,
+            num_return_sequences=1,
             pad_token_id=tokenizer.pad_token_id,
             output_scores=True,
             return_dict_in_generate=True,
         )
         
-        # Extract sequences and compute scores
-        sequences = outputs.sequences
+        # Generate remaining candidates with sampling (if num_candidates > 1)
+        # 使用采样生成其余候选（如果候选数 > 1）
+        if num_candidates > 1:
+            outputs_sampled = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                do_sample=True,
+                num_return_sequences=num_candidates - 1,
+                pad_token_id=tokenizer.pad_token_id,
+                output_scores=True,
+                return_dict_in_generate=True,
+            )
+            # Combine sequences: greedy first, then sampled
+            # 合并序列：贪婪解码的在前，然后是采样的
+            sequences = torch.cat([outputs_greedy.sequences, outputs_sampled.sequences], dim=0)
+            # Combine scores for score computation
+            # 合并分数用于计算
+            all_scores = outputs_greedy.scores if hasattr(outputs_greedy, 'scores') else []
+            if hasattr(outputs_sampled, 'scores') and outputs_sampled.scores:
+                # Note: scores structure might be different, we'll compute from sequences
+                pass
+        else:
+            sequences = outputs_greedy.sequences
         
         for i in range(num_candidates):
             generated = tokenizer.decode(sequences[i], skip_special_tokens=False)
@@ -909,18 +935,17 @@ def generate_sql_candidates(
             else:
                 sql = generated.strip()
             
-            # Compute sequence score (average log prob)
-            if hasattr(outputs, 'scores') and outputs.scores:
-                # Get log probs for generated tokens
-                seq_scores = []
-                for j, score in enumerate(outputs.scores):
-                    if j < len(sequences[i]) - input_length:
-                        token_id = sequences[i][input_length + j]
-                        log_probs = torch.log_softmax(score[i], dim=-1)
-                        seq_scores.append(log_probs[token_id].item())
-                avg_score = sum(seq_scores) / len(seq_scores) if seq_scores else 0.0
+            # Compute sequence score
+            # For greedy (i=0), assign highest score; for sampled, use decreasing score
+            # 对于贪婪解码（i=0），分配最高分数；对于采样，使用递减分数
+            if i == 0:
+                # Greedy candidate gets highest score (1.0)
+                # 贪婪候选获得最高分数（1.0）
+                avg_score = 1.0
             else:
-                avg_score = 0.0
+                # For sampled candidates, use position-based score (earlier = higher)
+                # 对于采样候选，使用基于位置的分数（越早 = 越高）
+                avg_score = 1.0 - (i - 1) * 0.1  # Decreasing score for later candidates
             
             candidates.append((sql, avg_score))
     
@@ -1215,8 +1240,8 @@ def generate_sql_with_egd(
     
     # Step 2: Validate and rank candidates
     candidate_results = []
-    best_executed = None
-    best_syntax_valid = None
+    executed_candidates = []  # List of (sql, score) for executed candidates
+    syntax_valid_candidates = []  # List of (sql, score) for syntax-valid candidates
     
     for i, (sql, score) in enumerate(candidates):
         result = {
@@ -1237,9 +1262,8 @@ def generate_sql_with_egd(
             candidate_results.append(result)
             continue
         
-        # Track first syntax-valid candidate
-        if best_syntax_valid is None:
-            best_syntax_valid = sql
+        # Track syntax-valid candidates with their scores
+        syntax_valid_candidates.append((sql, score))
         
         # Try to execute
         executed, exec_result, exec_error = execute_sql_on_schema(sql, schema, sample_data)
@@ -1248,8 +1272,9 @@ def generate_sql_with_egd(
         
         if not executed:
             result["error"] = exec_error
-        elif best_executed is None:
-            best_executed = sql
+        else:
+            # Track executed candidates with their scores
+            executed_candidates.append((sql, score))
         
         candidate_results.append(result)
         
@@ -1258,11 +1283,16 @@ def generate_sql_with_egd(
             print(f"  [{i+1}] {status}: {sql[:60]}...")
     
     # Step 3: Select best candidate
-    if best_executed:
-        selected_sql = best_executed
+    # Priority: executed (highest score) > syntax_valid (highest score) > highest_score
+    if executed_candidates:
+        # Select executed candidate with highest score
+        executed_candidates.sort(key=lambda x: x[1], reverse=True)
+        selected_sql = executed_candidates[0][0]
         method = "executed"
-    elif best_syntax_valid:
-        selected_sql = best_syntax_valid
+    elif syntax_valid_candidates:
+        # Select syntax-valid candidate with highest score
+        syntax_valid_candidates.sort(key=lambda x: x[1], reverse=True)
+        selected_sql = syntax_valid_candidates[0][0]
         method = "syntax_valid"
     elif candidates:
         selected_sql = candidates[0][0]  # Highest score
