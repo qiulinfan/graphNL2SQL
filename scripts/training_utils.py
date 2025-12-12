@@ -668,6 +668,26 @@ def train_phase1_wikisql(
     print(f"   Train: {len(wikisql_train_dataset):,} samples")
     print(f"   Eval:  {len(wikisql_eval_dataset):,} samples")
     
+    # Calculate steps per epoch for frequent evaluation
+    # 计算每个 epoch 的步数，用于频繁验证
+    effective_batch_size = config.batch_size * config.gradient_accumulation
+    steps_per_epoch = len(wikisql_train_dataset) // effective_batch_size
+    if steps_per_epoch == 0:
+        steps_per_epoch = 1
+    
+    # Evaluation every 0.1 epoch (10 times per epoch)
+    # 每 0.1 个 epoch 验证一次（每个 epoch 验证 10 次）
+    eval_steps = max(1, int(steps_per_epoch * 0.1))
+    
+    # Save checkpoint every 0.5 epoch (to avoid too many checkpoints)
+    # 每 0.5 个 epoch 保存一次 checkpoint（避免保存太多）
+    save_steps = max(1, int(steps_per_epoch * 0.5))
+    
+    print(f"\n Training Steps Configuration:")
+    print(f"   Steps per epoch:     {steps_per_epoch:,}")
+    print(f"   Eval every:          {eval_steps:,} steps (~0.1 epoch)")
+    print(f"   Save every:          {save_steps:,} steps (~0.5 epoch)")
+    
     # Training arguments
     phase1_output = f"{config.output_dir}/phase1_wikisql"
     
@@ -682,9 +702,12 @@ def train_phase1_wikisql(
         warmup_ratio=config.warmup_ratio,
         weight_decay=0.01,
         logging_steps=10,
-        eval_strategy="epoch",
-        eval_steps=200,
-        save_strategy=config.save_strategy,
+        # Use steps-based strategy for frequent evaluation
+        # 使用基于步数的策略进行频繁验证
+        eval_strategy="steps",  # Changed from "epoch" to "steps"
+        eval_steps=eval_steps,  # Evaluate every 0.1 epoch
+        save_strategy="steps",  # Must match eval_strategy for load_best_model_at_end
+        save_steps=save_steps,  # Save every 0.5 epoch
         save_total_limit=config.save_total_limit,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
@@ -772,6 +795,26 @@ def train_phase2_spider(
     print(f"   Train: {len(spider_train_dataset):,} samples")
     print(f"   Eval:  {len(spider_eval_dataset):,} samples")
     
+    # Calculate steps per epoch for frequent evaluation
+    # 计算每个 epoch 的步数，用于频繁验证
+    effective_batch_size = config.batch_size * config.gradient_accumulation
+    steps_per_epoch = len(spider_train_dataset) // effective_batch_size
+    if steps_per_epoch == 0:
+        steps_per_epoch = 1
+    
+    # Evaluation every 0.1 epoch (10 times per epoch)
+    # 每 0.1 个 epoch 验证一次（每个 epoch 验证 10 次）
+    eval_steps = max(1, int(steps_per_epoch * 0.1))
+    
+    # Save checkpoint every 0.5 epoch (to avoid too many checkpoints)
+    # 每 0.5 个 epoch 保存一次 checkpoint（避免保存太多）
+    save_steps = max(1, int(steps_per_epoch * 0.5))
+    
+    print(f"\n Training Steps Configuration:")
+    print(f"   Steps per epoch:     {steps_per_epoch:,}")
+    print(f"   Eval every:          {eval_steps:,} steps (~0.1 epoch)")
+    print(f"   Save every:          {save_steps:,} steps (~0.5 epoch)")
+    
     # Training arguments
     phase2_output = f"{config.output_dir}/phase2_spider"
     
@@ -786,9 +829,12 @@ def train_phase2_spider(
         warmup_ratio=config.warmup_ratio,
         weight_decay=0.01,
         logging_steps=10,
-        eval_strategy=config.save_strategy,  # Must match save_strategy for load_best_model_at_end
-        eval_steps=200,
-        save_strategy=config.save_strategy,
+        # Use steps-based strategy for frequent evaluation
+        # 使用基于步数的策略进行频繁验证
+        eval_strategy="steps",  # Changed from config.save_strategy to "steps"
+        eval_steps=eval_steps,  # Evaluate every 0.1 epoch
+        save_strategy="steps",  # Must match eval_strategy for load_best_model_at_end
+        save_steps=save_steps,  # Save every 0.5 epoch
         save_total_limit=config.save_total_limit,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
