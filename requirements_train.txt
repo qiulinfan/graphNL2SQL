@@ -1,0 +1,33 @@
+# NL2SQL Training Requirements
+# Install with: pip install -r requirements_train.txt
+
+# Core ML
+torch>=2.0.0
+transformers>=4.36.0
+datasets>=2.14.0
+
+# Parameter-efficient fine-tuning
+peft>=0.7.0
+
+# Quantization support
+bitsandbytes>=0.41.0
+
+# Flash attention (optional, for faster training)
+# pip install flash-attn --no-build-isolation
+# flash-attn>=2.3.0
+
+# Logging
+wandb>=0.15.0
+
+# Progress bars
+tqdm>=4.65.0
+
+# Data processing (already in data prep requirements)
+sentence-transformers>=2.2.0
+
+# Evaluation
+sqlparse>=0.4.0
+
+# Utilities
+numpy>=1.24.0
+pandas>=2.0.0

@@ -1,0 +1,21 @@
+# NL2SQL Project Dependencies
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Dataset downloading
+requests>=2.31.0
+tqdm>=4.65.0
+datasets>=2.14.0
+
+# Database execution
+duckdb>=0.9.0
+
+# Optional: Semantic similarity for semantic links
+# sentence-transformers>=2.2.0
+
+# For future: ML/Training dependencies
+# torch>=2.0.0
+# transformers>=4.35.0
+# peft>=0.6.0
