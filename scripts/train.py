@@ -45,7 +45,16 @@ from peft import (
     TaskType,
 )
 
-from train_config import FullConfig, CONFIGS, get_default_config
+try:
+    from .training_utils import TrainingConfig, load_config_from_json
+except ImportError:
+    from training_utils import TrainingConfig, load_config_from_json
+
+# Compatibility aliases
+FullConfig = TrainingConfig
+def get_default_config():
+    return TrainingConfig()
+CONFIGS = {"default": get_default_config()}
 
 
 # ============================================================================

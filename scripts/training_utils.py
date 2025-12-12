@@ -81,9 +81,10 @@ class TrainingConfig:
     max_seq_length: int = 1024
     gradient_checkpointing: bool = True
     
-    # Epochs
-    wikisql_epochs: int = 1
-    spider_epochs: int = 3
+    # Epochs (supports float, e.g., 0.5 for half epoch)
+    # 训练轮次（支持小数，如 0.5 表示半个 epoch）
+    wikisql_epochs: float = 1.0
+    spider_epochs: float = 3.0
     
     # Paths
     data_dir: str = "./training_data"

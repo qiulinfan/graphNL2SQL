@@ -17,7 +17,10 @@ Called by / 调用者:
 - training_utils.py: Formats schema for model input (格式化模式作为模型输入)
 """
 
-from schema_graph import SchemaGraph, ColumnNode, TableNode, EdgeType
+try:
+    from .schema_graph import SchemaGraph, ColumnNode, TableNode, EdgeType
+except ImportError:
+    from schema_graph import SchemaGraph, ColumnNode, TableNode, EdgeType
 
 
 def linearize_basic(graph: SchemaGraph) -> str:

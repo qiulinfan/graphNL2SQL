@@ -26,7 +26,15 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
 
-from train_config import FullConfig, get_default_config
+try:
+    from .training_utils import TrainingConfig, load_config_from_json
+except ImportError:
+    from training_utils import TrainingConfig, load_config_from_json
+
+# Compatibility aliases
+FullConfig = TrainingConfig
+def get_default_config():
+    return TrainingConfig()
 
 
 def load_model_for_inference(

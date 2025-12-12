@@ -14,17 +14,30 @@ from pathlib import Path
 from typing import Generator
 from tqdm import tqdm
 
-from schema_graph import (
-    SchemaGraph,
-    parse_wikisql_schema,
-    parse_spider_schema,
-    parse_create_table_schema,
-)
-from text_linearization import (
-    linearize_for_training,
-    linearize_wikisql,
-    format_training_example,
-)
+try:
+    from .schema_graph import (
+        SchemaGraph,
+        parse_wikisql_schema,
+        parse_spider_schema,
+        parse_create_table_schema,
+    )
+    from .text_linearization import (
+        linearize_for_training,
+        linearize_wikisql,
+        format_training_example,
+    )
+except ImportError:
+    from schema_graph import (
+        SchemaGraph,
+        parse_wikisql_schema,
+        parse_spider_schema,
+        parse_create_table_schema,
+    )
+    from text_linearization import (
+        linearize_for_training,
+        linearize_wikisql,
+        format_training_example,
+    )
 
 
 # Use project root, not scripts/ directory
