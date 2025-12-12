@@ -708,21 +708,40 @@ def train_phase1_wikisql(
     # Evaluation frequency from config (default 0.1 epoch)
     # 从配置读取验证频率（默认 0.1 epoch）
     eval_fraction = getattr(config, 'eval_every_epoch_fraction', 0.1)
-    eval_steps = max(1, int(steps_per_epoch * eval_fraction))
     
-    # Save checkpoint: ensure save_steps is a multiple of eval_steps
-    # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
-    # Target: save every ~0.5 epoch, but must be multiple of eval_steps
-    # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
-    target_save_steps = max(1, int(steps_per_epoch * 0.5))
-    # Round up to nearest multiple of eval_steps
-    # 向上取整到最近的 eval_steps 倍数
-    save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps
-    
-    print(f"\n Training Steps Configuration:")
-    print(f"   Steps per epoch:     {steps_per_epoch:,}")
-    print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
-    print(f"   Save every:          {save_steps:,} steps (~{save_steps/steps_per_epoch:.2f} epoch, {save_steps//eval_steps}x eval)")
+    # Determine strategy: use epoch-based if eval_fraction >= 1.0, otherwise steps-based
+    # 确定策略：如果 eval_fraction >= 1.0 使用 epoch-based，否则使用 steps-based
+    if eval_fraction >= 1.0:
+        # Epoch-based strategy
+        # 基于 epoch 的策略
+        eval_strategy = "epoch"
+        save_strategy = config.save_strategy  # Use config value (usually "epoch")
+        eval_steps = None
+        save_steps = None
+        print(f"\n Training Configuration:")
+        print(f"   Eval strategy:      epoch (every {eval_fraction:.1f} epoch)")
+        print(f"   Save strategy:      {save_strategy}")
+    else:
+        # Steps-based strategy for frequent evaluation
+        # 基于步数的策略用于频繁验证
+        eval_steps = max(1, int(steps_per_epoch * eval_fraction))
+        
+        # Save checkpoint: ensure save_steps is a multiple of eval_steps
+        # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
+        # Target: save every ~0.5 epoch, but must be multiple of eval_steps
+        # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
+        target_save_steps = max(1, int(steps_per_epoch * 0.5))
+        # Round up to nearest multiple of eval_steps
+        # 向上取整到最近的 eval_steps 倍数
+        save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps
+        
+        eval_strategy = "steps"
+        save_strategy = "steps"  # Must match eval_strategy for load_best_model_at_end
+        
+        print(f"\n Training Steps Configuration:")
+        print(f"   Steps per epoch:     {steps_per_epoch:,}")
+        print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
+        print(f"   Save every:          {save_steps:,} steps (~{save_steps/steps_per_epoch:.2f} epoch, {save_steps//eval_steps}x eval)")
     
     # Training arguments
     phase1_output = f"{config.output_dir}/phase1_wikisql"
@@ -738,12 +757,10 @@ def train_phase1_wikisql(
         warmup_ratio=config.warmup_ratio,
         weight_decay=0.01,
         logging_steps=10,
-        # Use steps-based strategy for frequent evaluation
-        # 使用基于步数的策略进行频繁验证
-        eval_strategy="steps",  # Changed from "epoch" to "steps"
-        eval_steps=eval_steps,  # Evaluate every 0.1 epoch
-        save_strategy="steps",  # Must match eval_strategy for load_best_model_at_end
-        save_steps=save_steps,  # Save every 0.5 epoch
+        eval_strategy=eval_strategy,
+        eval_steps=eval_steps,
+        save_strategy=save_strategy,
+        save_steps=save_steps,
         save_total_limit=config.save_total_limit,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
@@ -841,21 +858,40 @@ def train_phase2_spider(
     # Evaluation frequency from config (default 0.1 epoch)
     # 从配置读取验证频率（默认 0.1 epoch）
     eval_fraction = getattr(config, 'eval_every_epoch_fraction', 0.1)
-    eval_steps = max(1, int(steps_per_epoch * eval_fraction))
     
-    # Save checkpoint: ensure save_steps is a multiple of eval_steps
-    # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
-    # Target: save every ~0.5 epoch, but must be multiple of eval_steps
-    # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
-    target_save_steps = max(1, int(steps_per_epoch * 0.5))
-    # Round up to nearest multiple of eval_steps
-    # 向上取整到最近的 eval_steps 倍数
-    save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps
-    
-    print(f"\n Training Steps Configuration:")
-    print(f"   Steps per epoch:     {steps_per_epoch:,}")
-    print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
-    print(f"   Save every:          {save_steps:,} steps (~{save_steps/steps_per_epoch:.2f} epoch, {save_steps//eval_steps}x eval)")
+    # Determine strategy: use epoch-based if eval_fraction >= 1.0, otherwise steps-based
+    # 确定策略：如果 eval_fraction >= 1.0 使用 epoch-based，否则使用 steps-based
+    if eval_fraction >= 1.0:
+        # Epoch-based strategy
+        # 基于 epoch 的策略
+        eval_strategy = "epoch"
+        save_strategy = config.save_strategy  # Use config value (usually "epoch")
+        eval_steps = None
+        save_steps = None
+        print(f"\n Training Configuration:")
+        print(f"   Eval strategy:      epoch (every {eval_fraction:.1f} epoch)")
+        print(f"   Save strategy:      {save_strategy}")
+    else:
+        # Steps-based strategy for frequent evaluation
+        # 基于步数的策略用于频繁验证
+        eval_steps = max(1, int(steps_per_epoch * eval_fraction))
+        
+        # Save checkpoint: ensure save_steps is a multiple of eval_steps
+        # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
+        # Target: save every ~0.5 epoch, but must be multiple of eval_steps
+        # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
+        target_save_steps = max(1, int(steps_per_epoch * 0.5))
+        # Round up to nearest multiple of eval_steps
+        # 向上取整到最近的 eval_steps 倍数
+        save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps
+        
+        eval_strategy = "steps"
+        save_strategy = "steps"  # Must match eval_strategy for load_best_model_at_end
+        
+        print(f"\n Training Steps Configuration:")
+        print(f"   Steps per epoch:     {steps_per_epoch:,}")
+        print(f"   Eval every:          {eval_steps:,} steps (~{eval_fraction} epoch)")
+        print(f"   Save every:          {save_steps:,} steps (~{save_steps/steps_per_epoch:.2f} epoch, {save_steps//eval_steps}x eval)")
     
     # Training arguments
     phase2_output = f"{config.output_dir}/phase2_spider"
@@ -871,12 +907,10 @@ def train_phase2_spider(
         warmup_ratio=config.warmup_ratio,
         weight_decay=0.01,
         logging_steps=10,
-        # Use steps-based strategy for frequent evaluation
-        # 使用基于步数的策略进行频繁验证
-        eval_strategy="steps",  # Changed from config.save_strategy to "steps"
-        eval_steps=eval_steps,  # Evaluate every 0.1 epoch
-        save_strategy="steps",  # Must match eval_strategy for load_best_model_at_end
-        save_steps=save_steps,  # Save every 0.5 epoch
+        eval_strategy=eval_strategy,
+        eval_steps=eval_steps,
+        save_strategy=save_strategy,
+        save_steps=save_steps,
         save_total_limit=config.save_total_limit,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
