@@ -13,6 +13,7 @@ Main Functions / 主要功能:
 - evaluate_with_execution(): Evaluate with both EM and Execution Match (EX) / 同时评估 EM 和执行匹配
 - generate_sql_with_egd(): Execution-Guided Decoding / 执行引导解码
 - evaluate_with_egd(): Evaluate using EGD method / 使用 EGD 方法评估
+- test_all_checkpoints(): Test all checkpoints and report EM/EX / 测试所有checkpoint并报告EM/EX
 
 Metrics / 评估指标:
 - Exact Match (EM): Normalized SQL string comparison / 规范化 SQL 字符串比较
@@ -24,8 +25,10 @@ Called by / 调用者:
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
+from collections import defaultdict
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -1491,5 +1494,255 @@ def evaluate_with_egd(
         "egd_executed_count": egd_executed,
         "total": len(eval_data),
         "results": results,
+    }
+
+
+# =============================================================================
+# DATA LOADING
+# =============================================================================
+
+def load_jsonl(file_path: str) -> List[Dict]:
+    """
+    Load data from JSONL file.
+    从JSONL文件加载数据。
+    
+    Args / 参数:
+        file_path: Path to JSONL file (JSONL文件路径)
+        
+    Returns / 返回:
+        List of dictionaries (字典列表)
+    """
+    data = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():  # Skip empty lines
+                data.append(json.loads(line))
+    return data
+
+
+# =============================================================================
+# CHECKPOINT EVALUATION
+# =============================================================================
+
+def test_all_checkpoints(
+    checkpoint_dir: str,
+    eval_data: List[Dict],
+    base_model_name: Optional[str] = None,
+    max_samples: Optional[int] = None,
+    load_in_4bit: bool = True,
+    load_in_8bit: bool = False,
+    use_egd: bool = False,
+    egd_candidates: int = 5,
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Test all checkpoints in a directory and report EM and EX accuracy for each.
+    测试目录中的所有checkpoint，并报告每个的EM和EX准确率。
+    
+    Function / 功能:
+        Scans checkpoint directory, loads each checkpoint, evaluates on eval_data,
+        and returns a summary sorted by performance.
+        扫描checkpoint目录，加载每个checkpoint，在eval_data上评估，并返回按性能排序的摘要。
+    
+    Args / 参数:
+        checkpoint_dir: Directory containing checkpoints (e.g., "./checkpoints/phase2_spider")
+                       包含checkpoints的目录（例如："./checkpoints/phase2_spider"）
+        eval_data: List of dicts with 'question', 'schema', 'sql' keys
+                  包含 question, schema, sql 键的字典列表
+        base_model_name: Base model name (auto-detected if None)
+                        基础模型名称（如果为None则自动检测）
+        max_samples: Maximum samples to evaluate per checkpoint
+                     每个checkpoint评估的最大样本数
+        load_in_4bit: Whether to use 4-bit quantization
+                      是否使用4位量化
+        load_in_8bit: Whether to use 8-bit quantization
+                      是否使用8位量化
+        use_egd: Whether to use Execution-Guided Decoding
+                是否使用执行引导解码
+        egd_candidates: Number of candidates for EGD
+                       EGD的候选数量
+        verbose: Print progress updates
+                是否打印进度更新
+    
+    Returns / 返回:
+        Dict with keys:
+        返回字典包含：
+        - summary: List of dicts with checkpoint name, step, EM, EX (按性能排序)
+                  包含checkpoint名称、步数、EM、EX的字典列表（按性能排序）
+        - best_em: Best checkpoint by EM accuracy (按EM准确率的最佳checkpoint)
+        - best_ex: Best checkpoint by EX accuracy (按EX准确率的最佳checkpoint)
+        - all_results: Dict mapping checkpoint path to full evaluation results
+                        将checkpoint路径映射到完整评估结果的字典
+    """
+    checkpoint_dir = Path(checkpoint_dir)
+    
+    if not checkpoint_dir.exists():
+        raise FileNotFoundError(f"Checkpoint directory not found: {checkpoint_dir}")
+    
+    if max_samples:
+        eval_data = eval_data[:max_samples]
+    
+    # Find all checkpoints
+    # 查找所有checkpoints
+    checkpoints = []
+    
+    # Pattern 1: checkpoint-{step} directories
+    # 模式1：checkpoint-{step} 目录
+    for item in checkpoint_dir.iterdir():
+        if item.is_dir() and item.name.startswith("checkpoint-"):
+            # Extract step number
+            # 提取步数
+            match = re.search(r'checkpoint-(\d+)', item.name)
+            if match:
+                step = int(match.group(1))
+                checkpoints.append((step, item))
+    
+    # Pattern 2: "final" checkpoint
+    # 模式2："final" checkpoint
+    final_path = checkpoint_dir / "final"
+    if final_path.exists() and final_path.is_dir():
+        checkpoints.append((float('inf'), final_path))  # Sort last
+    
+    if not checkpoints:
+        raise ValueError(f"No checkpoints found in {checkpoint_dir}")
+    
+    # Sort by step number
+    # 按步数排序
+    checkpoints.sort(key=lambda x: x[0])
+    
+    if verbose:
+        print("=" * 80)
+        print(f"Testing {len(checkpoints)} checkpoints from {checkpoint_dir}")
+        print("=" * 80)
+        print()
+    
+    all_results = {}
+    summary = []
+    
+    for idx, (step, checkpoint_path) in enumerate(checkpoints, 1):
+        checkpoint_name = checkpoint_path.name
+        step_str = "final" if step == float('inf') else str(step)
+        
+        if verbose:
+            print(f"[{idx}/{len(checkpoints)}] Testing checkpoint: {checkpoint_name} (Step {step_str})")
+            print("-" * 80)
+        
+        try:
+            # Load model
+            # 加载模型
+            model, tokenizer = load_finetuned_model(
+                str(checkpoint_path),
+                base_model_name=base_model_name,
+                load_in_4bit=load_in_4bit,
+                load_in_8bit=load_in_8bit,
+            )
+            
+            # Evaluate
+            # 评估
+            results = evaluate_with_execution(
+                model, tokenizer, eval_data,
+                max_samples=None,  # Already limited above
+                verbose=False,  # Suppress per-checkpoint verbose output
+                use_egd=use_egd,
+                egd_candidates=egd_candidates,
+            )
+            
+            em_acc = results["exact_match_accuracy"]
+            ex_acc = results["execution_match_accuracy"]
+            em_count = results["exact_match_count"]
+            ex_count = results["execution_match_count"]
+            total = results["total"]
+            
+            summary.append({
+                "checkpoint": checkpoint_name,
+                "step": step_str,
+                "path": str(checkpoint_path),
+                "em_accuracy": em_acc,
+                "ex_accuracy": ex_acc,
+                "em_count": em_count,
+                "ex_count": ex_count,
+                "total": total,
+            })
+            
+            all_results[str(checkpoint_path)] = results
+            
+            if verbose:
+                print(f"  EM: {em_acc:.2f}% ({em_count}/{total})")
+                print(f"  EX: {ex_acc:.2f}% ({ex_count}/{total})")
+                print()
+            
+            # Clean up memory
+            # 清理内存
+            del model, tokenizer
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            
+        except Exception as e:
+            if verbose:
+                print(f"  ❌ Error: {e}")
+                print()
+            summary.append({
+                "checkpoint": checkpoint_name,
+                "step": step_str,
+                "path": str(checkpoint_path),
+                "em_accuracy": 0.0,
+                "ex_accuracy": 0.0,
+                "em_count": 0,
+                "ex_count": 0,
+                "total": total if 'total' in locals() else 0,
+                "error": str(e),
+            })
+    
+    # Sort by EX accuracy (primary), then EM accuracy (secondary)
+    # 按EX准确率排序（主要），然后按EM准确率排序（次要）
+    summary.sort(key=lambda x: (x["ex_accuracy"], x["em_accuracy"]), reverse=True)
+    
+    # Find best checkpoints
+    # 查找最佳checkpoints
+    best_em = max(summary, key=lambda x: x["em_accuracy"]) if summary else None
+    best_ex = max(summary, key=lambda x: x["ex_accuracy"]) if summary else None
+    
+    # Print summary
+    # 打印摘要
+    if verbose:
+        print("=" * 80)
+        print("SUMMARY - All Checkpoints (Sorted by EX, then EM)")
+        print("=" * 80)
+        print(f"{'Rank':<6} {'Step':<10} {'Checkpoint':<30} {'EM %':<10} {'EX %':<10}")
+        print("-" * 80)
+        
+        for rank, item in enumerate(summary, 1):
+            step = item["step"]
+            checkpoint = item["checkpoint"][:28]  # Truncate if too long
+            em = item["em_accuracy"]
+            ex = item["ex_accuracy"]
+            
+            marker = ""
+            if item == best_ex:
+                marker = " ⭐ (Best EX)"
+            elif item == best_em:
+                marker = " 🏆 (Best EM)"
+            
+            print(f"{rank:<6} {step:<10} {checkpoint:<30} {em:>6.2f}%   {ex:>6.2f}%{marker}")
+        
+        print("-" * 80)
+        print()
+        
+        if best_ex:
+            print(f"🏆 Best by EX: {best_ex['checkpoint']} (Step {best_ex['step']})")
+            print(f"   EM: {best_ex['em_accuracy']:.2f}%, EX: {best_ex['ex_accuracy']:.2f}%")
+            print(f"   Path: {best_ex['path']}")
+            print()
+        
+        if best_em and best_em != best_ex:
+            print(f"⭐ Best by EM: {best_em['checkpoint']} (Step {best_em['step']})")
+            print(f"   EM: {best_em['em_accuracy']:.2f}%, EX: {best_em['ex_accuracy']:.2f}%")
+            print(f"   Path: {best_em['path']}")
+            print()
+    
+    return {
+        "summary": summary,
+        "best_em": best_em,
+        "best_ex": best_ex,
+        "all_results": all_results,
     }
 
