@@ -44,7 +44,7 @@ class SchemaLink:
 def extract_table_mentions(
     question: str,
     graph,
-    threshold: float = 0.6,
+    threshold: float = 0.7,
     use_embeddings: bool = True
 ) -> List[SchemaLink]:
     """
@@ -58,6 +58,22 @@ def extract_table_mentions(
         threshold: Similarity threshold for embedding matching
         use_embeddings: Whether to use embedding-based matching (slower but more accurate)
     """
+    # Common question words and stop words that should NOT be linked to schema elements
+    STOP_WORDS = {
+        'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whom', 'whose',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+        'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+        'can', 'the', 'a', 'an', 'and', 'or', 'but', 'if', 'of', 'to', 'for',
+        'with', 'from', 'by', 'in', 'on', 'at', 'as', 'than', 'that', 'this',
+        'these', 'those', 'many', 'much', 'more', 'most', 'some', 'any', 'all',
+        'each', 'every', 'few', 'several', 'other', 'another', 'such', 'same',
+        'different', 'old', 'new', 'first', 'last', 'next', 'previous', 'total',
+        'number', 'count', 'sum', 'average', 'avg', 'maximum', 'max', 'minimum',
+        'min', 'top', 'bottom', 'highest', 'lowest', 'largest', 'smallest',
+        'greater', 'less', 'equal', 'older', 'younger', 'than', 'show', 'list',
+        'find', 'get', 'return', 'give', 'tell', 'display', 'present'
+    }
+    
     links = []
     question_lower = question.lower()
     
@@ -103,7 +119,11 @@ def extract_table_mentions(
                 return links
             
             # Get embeddings for question words and table names
-            question_words = [w for w in question_lower.split() if len(w) > 3]
+            # Filter out stop words and common question words
+            question_words = [
+                w for w in question_lower.split() 
+                if len(w) > 3 and w not in STOP_WORDS
+            ]
             if not question_words:
                 return links
             
@@ -137,7 +157,7 @@ def extract_table_mentions(
 def extract_column_mentions(
     question: str,
     graph,
-    threshold: float = 0.6,
+    threshold: float = 0.7,
     use_embeddings: bool = True
 ) -> List[SchemaLink]:
     """
@@ -151,6 +171,22 @@ def extract_column_mentions(
         threshold: Similarity threshold for embedding matching
         use_embeddings: Whether to use embedding-based matching (slower but more accurate)
     """
+    # Common question words and stop words that should NOT be linked to schema elements
+    STOP_WORDS = {
+        'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whom', 'whose',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+        'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+        'can', 'the', 'a', 'an', 'and', 'or', 'but', 'if', 'of', 'to', 'for',
+        'with', 'from', 'by', 'in', 'on', 'at', 'as', 'than', 'that', 'this',
+        'these', 'those', 'many', 'much', 'more', 'most', 'some', 'any', 'all',
+        'each', 'every', 'few', 'several', 'other', 'another', 'such', 'same',
+        'different', 'old', 'new', 'first', 'last', 'next', 'previous', 'total',
+        'number', 'count', 'sum', 'average', 'avg', 'maximum', 'max', 'minimum',
+        'min', 'top', 'bottom', 'highest', 'lowest', 'largest', 'smallest',
+        'greater', 'less', 'equal', 'older', 'younger', 'than', 'show', 'list',
+        'find', 'get', 'return', 'give', 'tell', 'display', 'present'
+    }
+    
     links = []
     question_lower = question.lower()
     
@@ -199,7 +235,11 @@ def extract_column_mentions(
             if model is None:
                 return links
             
-            question_words = [w for w in question_lower.split() if len(w) > 2]
+            # Filter out stop words and common question words
+            question_words = [
+                w for w in question_lower.split() 
+                if len(w) > 2 and w not in STOP_WORDS
+            ]
             if not question_words:
                 return links
             
@@ -245,7 +285,7 @@ def extract_column_mentions(
 def extract_value_mentions(
     question: str,
     graph,
-    threshold: float = 0.5
+    threshold: float = 0.6
 ) -> List[SchemaLink]:
     """
     Identify values in the question and map them to likely columns.
@@ -328,10 +368,11 @@ def perform_schema_linking(
     include_tables: bool = True,
     include_columns: bool = True,
     include_values: bool = True,
-    table_threshold: float = 0.6,
-    column_threshold: float = 0.6,
-    value_threshold: float = 0.5,
+    table_threshold: float = 0.7,
+    column_threshold: float = 0.7,
+    value_threshold: float = 0.6,
     use_embeddings: bool = True,
+    min_confidence: float = None,
 ) -> List[SchemaLink]:
     """
     Perform complete schema linking for a question.
@@ -348,9 +389,12 @@ def perform_schema_linking(
         table_threshold: Similarity threshold for table matching
         column_threshold: Similarity threshold for column matching
         value_threshold: Confidence threshold for value matching
+        use_embeddings: Whether to use embedding-based matching
+        min_confidence: Optional final confidence filter (applied after deduplication)
+                       If None, uses the minimum of table/column/value thresholds
     
     Returns:
-        List of SchemaLink objects
+        List of SchemaLink objects, sorted by confidence (highest first)
     """
     all_links = []
     
@@ -375,31 +419,58 @@ def perform_schema_linking(
             seen.add(key)
             unique_links.append(link)
     
+    # Apply final confidence filter if specified
+    if min_confidence is None:
+        # Default: use stricter threshold (0.65) to filter out low-confidence links
+        # This ensures only high-quality links are included in the prompt
+        min_confidence = 0.65
+    
+    unique_links = [l for l in unique_links if l.confidence >= min_confidence]
+    
     # Sort by confidence (highest first)
     unique_links.sort(key=lambda x: x.confidence, reverse=True)
     
     return unique_links
 
 
-def format_schema_links_for_prompt(links: List[SchemaLink]) -> str:
+def format_schema_links_for_prompt(
+    links: List[SchemaLink],
+    min_confidence: float = 0.65
+) -> str:
     """
     Format schema links as text to include in the prompt.
     
+    Only includes links with confidence >= min_confidence to avoid noise.
+    
+    Args:
+        links: List of SchemaLink objects
+        min_confidence: Minimum confidence threshold (default: 0.65)
+                       - Tables: typically 0.8+ (exact/substring matches)
+                       - Columns: typically 0.7+ (exact matches) or 0.65+ (embedding matches)
+                       - Values: typically 0.6+ (context-based)
+                       Only high-confidence links are included to avoid noise.
+    
     Example output:
     [SCHEMA LINKS]
-    Question word "singer" → table: singer
-    Question word "name" → column: singer.name
-    Question word "25" → column: singer.age (value)
+    Question word "singer" → table: singer (confidence: 1.00)
+    Question word "name" → column: singer.name (confidence: 1.00)
+    Question word "John" → column: singer.name (value, confidence: 0.80)
     """
     if not links:
+        return ""
+    
+    # Filter by confidence threshold
+    filtered_links = [l for l in links if l.confidence >= min_confidence]
+    
+    if not filtered_links:
         return ""
     
     lines = ["[SCHEMA LINKS]"]
     
     # Group by type
-    tables = [l for l in links if l.link_type == "table"]
-    columns = [l for l in links if l.link_type == "column"]
-    values = [l for l in links if l.link_type == "value"]
+    tables = [l for l in filtered_links if l.link_type == "table"]
+    columns = [l for l in filtered_links if l.link_type == "column"]
+    values = [l for l in filtered_links if l.link_type == "value"]
     
     for link in tables:
         lines.append(f'Question word "{link.question_text}" → table: {link.schema_element} (confidence: {link.confidence:.2f})')
