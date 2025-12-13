@@ -362,18 +362,18 @@ def show_sample_examples(
         # Show full input (includes schema linking if present)
         # 显示完整的 input（如果包含 schema linking 也会显示）
         input_text = example.get('input', '')
-        if input_text:
+        if input_text and input_text.strip():
             print(f"\nFull Input (with schema linking if enabled):")
             print("-" * 60)
-            # Show first 800 chars, or full if shorter
-            if len(input_text) > 800:
-                print(input_text[:800] + "\n... (truncated)")
+            # Show first 1000 chars, or full if shorter
+            if len(input_text) > 1000:
+                print(input_text[:1000] + "\n... (truncated)")
             else:
                 print(input_text)
         else:
             # Fallback to schema only if input not available
             # 如果没有 input，回退到只显示 schema
-            print(f"\nSchema preview:")
+            print(f"\nSchema preview (input field not found or empty):")
             schema = example.get('schema', 'N/A')
             print(schema[:500] + "..." if len(schema) > 500 else schema)
     
@@ -388,18 +388,19 @@ def show_sample_examples(
         # Show full input (includes schema linking if present)
         # 显示完整的 input（如果包含 schema linking 也会显示）
         input_text = example.get('input', '')
-        if input_text:
+        if input_text and input_text.strip():
             print(f"\nFull Input (with schema linking if enabled):")
             print("-" * 60)
-            # Show first 800 chars, or full if shorter
-            if len(input_text) > 800:
-                print(input_text[:800] + "\n... (truncated)")
+            # Show first 1000 chars, or full if shorter
+            if len(input_text) > 1000:
+                print(input_text[:1000] + "\n... (truncated)")
             else:
                 print(input_text)
         else:
             # Fallback to schema only if input not available
             # 如果没有 input，回退到只显示 schema
-            print(f"\nSchema preview:")
+            print(f"\nSchema preview (input field not found or empty):")
+            print(f"Available keys: {list(example.keys())}")
             schema = example.get('schema', 'N/A')
             print(schema[:500] + "..." if len(schema) > 500 else schema)
 
