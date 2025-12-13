@@ -371,9 +371,20 @@ def show_sample_examples(
             else:
                 print(input_text)
         else:
+            # Debug: show why input is not displayed
+            # 调试：显示为什么没有显示 input
+            if 'input' in example:
+                input_val = example['input']
+                print(f"\n⚠️ Input field exists but appears empty")
+                print(f"   Type: {type(input_val)}")
+                if input_val:
+                    print(f"   Length: {len(input_val)}")
+                    print(f"   First 100 chars: {repr(input_val[:100])}")
+                else:
+                    print(f"   Value: {repr(input_val)}")
             # Fallback to schema only if input not available
             # 如果没有 input，回退到只显示 schema
-            print(f"\nSchema preview (input field not found or empty):")
+            print(f"\nSchema preview:")
             schema = example.get('schema', 'N/A')
             print(schema[:500] + "..." if len(schema) > 500 else schema)
     
@@ -397,10 +408,20 @@ def show_sample_examples(
             else:
                 print(input_text)
         else:
+            # Debug: show why input is not displayed
+            # 调试：显示为什么没有显示 input
+            if 'input' in example:
+                input_val = example['input']
+                print(f"\n⚠️ Input field exists but appears empty")
+                print(f"   Type: {type(input_val)}")
+                if input_val:
+                    print(f"   Length: {len(input_val)}")
+                    print(f"   First 100 chars: {repr(input_val[:100])}")
+                else:
+                    print(f"   Value: {repr(input_val)}")
             # Fallback to schema only if input not available
             # 如果没有 input，回退到只显示 schema
-            print(f"\nSchema preview (input field not found or empty):")
-            print(f"Available keys: {list(example.keys())}")
+            print(f"\nSchema preview:")
             schema = example.get('schema', 'N/A')
             print(schema[:500] + "..." if len(schema) > 500 else schema)
 
