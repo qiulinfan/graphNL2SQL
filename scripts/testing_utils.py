@@ -9,11 +9,11 @@ notebooks and scripts.
 Main Functions / 主要功能:
 - generate_sql(): Generate SQL from question and schema / 从问题和模式生成 SQL
 - load_finetuned_model(): Load model with LoRA adapters / 加载带 LoRA 的模型
-- evaluate_model(): Evaluate on dataset with Exact Match (EM) / 在数据集上评估精确匹配
 - evaluate_with_execution(): Evaluate with both EM and Execution Match (EX) / 同时评估 EM 和执行匹配
+- comprehensive_evaluation(): Ultimate test with multi-dimensional stats / 终极测试，多维度统计
 - generate_sql_with_egd(): Execution-Guided Decoding / 执行引导解码
-- evaluate_with_egd(): Evaluate using EGD method / 使用 EGD 方法评估
 - test_all_checkpoints(): Test all checkpoints and report EM/EX / 测试所有checkpoint并报告EM/EX
+- analyze_performance_by_database(): Analyze EM/EX per database / 按数据库分析 EM/EX
 
 Metrics / 评估指标:
 - Exact Match (EM): Normalized SQL string comparison / 规范化 SQL 字符串比较
@@ -274,97 +274,6 @@ def normalize_sql(sql: str) -> str:
     return sql
 
 
-def evaluate_model(
-    model,
-    tokenizer,
-    eval_data: List[Dict],
-    max_samples: Optional[int] = None,
-    max_new_tokens: int = 256,
-    verbose: bool = True,
-    use_egd: bool = False,
-    egd_candidates: int = 5,
-) -> Dict[str, Any]:
-    """
-    Evaluate model on a dataset using Exact Match metric.
-    使用精确匹配指标在数据集上评估模型。
-    
-    Function / 功能:
-        Iterates through evaluation data, generates SQL for each example,
-        compares with gold SQL using normalized comparison, and computes accuracy.
-        Optionally uses EGD for better accuracy.
-        遍历评估数据，为每个样本生成 SQL，使用规范化比较与标准 SQL 对比，计算准确率。
-        可选使用 EGD 以提高准确率。
-    
-    Called by / 调用者:
-        - pipeline.ipynb: Main evaluation in testing section (测试部分的主要评估)
-    
-    Args / 参数:
-        model: The language model (语言模型)
-        tokenizer: The tokenizer (分词器)
-        eval_data: List of dicts with 'question', 'schema', 'sql' keys
-                   包含 question, schema, sql 键的字典列表
-        max_samples: Maximum samples to evaluate, None=all (最大评估样本数)
-        max_new_tokens: Max tokens per generation (每次生成的最大 token 数)
-        verbose: Print progress updates (是否打印进度)
-        use_egd: Whether to use Execution-Guided Decoding (是否使用 EGD)
-        egd_candidates: Number of candidates for EGD (EGD 候选数量)
-        
-    Returns / 返回:
-        Dict with keys: accuracy, correct, total, results
-        包含 accuracy, correct, total, results 的字典
-    """
-    if max_samples:
-        eval_data = eval_data[:max_samples]
-    
-    results = []
-    correct = 0
-    
-    if verbose:
-        mode = "EGD" if use_egd else "Standard"
-        print(f"Evaluating on {len(eval_data)} samples ({mode} mode)...")
-    
-    for i, example in enumerate(eval_data):
-        # Generate SQL (with optional EGD)
-        pred_sql = generate_sql(
-            model, tokenizer,
-            example["question"],
-            example["schema"],
-            max_new_tokens=max_new_tokens,
-            use_egd=use_egd,
-            egd_candidates=egd_candidates,
-        )
-        
-        # Normalize and compare
-        gold_norm = normalize_sql(example["sql"])
-        pred_norm = normalize_sql(pred_sql)
-        is_match = gold_norm == pred_norm
-        
-        if is_match:
-            correct += 1
-        
-        results.append({
-            "question": example["question"],
-            "gold_sql": example["sql"],
-            "pred_sql": pred_sql,
-            "match": is_match,
-        })
-        
-        if verbose and (i + 1) % 10 == 0:
-            print(f"  [{i+1}/{len(eval_data)}] Accuracy: {100*correct/(i+1):.1f}%")
-    
-    accuracy = 100 * correct / len(eval_data) if eval_data else 0
-    
-    if verbose:
-        print(f"\n Final Accuracy: {accuracy:.2f}% ({correct}/{len(eval_data)})")
-    
-    return {
-        "accuracy": accuracy,
-        "correct": correct,
-        "total": len(eval_data),
-        "results": results,
-    }
-
-
 def compare_execution_results(
     result1: Any,
     result2: Any,
@@ -586,34 +495,334 @@ def show_evaluation_examples(
     eval_results: Dict[str, Any],
     num_correct: int = 3,
     num_incorrect: int = 3,
+    by_execution_match: bool = False,
 ) -> None:
     """
     Display example predictions from evaluation results.
+    显示评估结果中的示例预测。
     
     Args:
-        eval_results: Results dictionary from evaluate_model
+        eval_results: Results dictionary from evaluate_with_execution or comprehensive_evaluation
         num_correct: Number of correct examples to show
         num_incorrect: Number of incorrect examples to show
+        by_execution_match: If True, use EX for correct/incorrect; else use EM
     """
     results = eval_results["results"]
     
-    correct_examples = [r for r in results if r["match"]]
-    incorrect_examples = [r for r in results if not r["match"]]
+    # Support both old format (match) and new format (exact_match/execution_match)
+    def is_correct(r):
+        if by_execution_match:
+            return r.get("execution_match", r.get("ex", r.get("match", False)))
+        else:
+            return r.get("exact_match", r.get("em", r.get("match", False)))
     
+    correct_examples = [r for r in results if is_correct(r)]
+    incorrect_examples = [r for r in results if not is_correct(r)]
+    
+    metric_name = "EX" if by_execution_match else "EM"
     print("=" * 60)
-    print("CORRECT PREDICTIONS")
+    print(f"CORRECT PREDICTIONS (by {metric_name})")
     print("=" * 60)
     for i, ex in enumerate(correct_examples[:num_correct]):
         print(f"\n[{i+1}] Question: {ex['question']}")
         print(f"    SQL: {ex['pred_sql']}")
     
     print("\n" + "=" * 60)
-    print("INCORRECT PREDICTIONS")
+    print(f"INCORRECT PREDICTIONS (by {metric_name})")
     print("=" * 60)
     for i, ex in enumerate(incorrect_examples[:num_incorrect]):
         print(f"\n[{i+1}] Question: {ex['question']}")
         print(f"    Gold: {ex['gold_sql']}")
         print(f"    Pred: {ex['pred_sql']}")
+
+
+# =============================================================================
+# COMPREHENSIVE EVALUATION (终极测试函数)
+# =============================================================================
+
+def _detect_sql_operations(sql: str) -> Dict[str, bool]:
+    """
+    Detect SQL operations in a query.
+    检测 SQL 查询中的操作类型。
+    """
+    sql_upper = sql.upper()
+    return {
+        "has_join": "JOIN" in sql_upper,
+        "has_subquery": sql_upper.count("SELECT") > 1,
+        "has_group_by": "GROUP BY" in sql_upper,
+        "has_having": "HAVING" in sql_upper,
+        "has_order_by": "ORDER BY" in sql_upper,
+        "has_limit": "LIMIT" in sql_upper,
+        "has_distinct": "DISTINCT" in sql_upper,
+        "has_aggregation": any(agg in sql_upper for agg in ["COUNT(", "SUM(", "AVG(", "MAX(", "MIN("]),
+        "has_where": "WHERE" in sql_upper,
+        "has_union": "UNION" in sql_upper or "INTERSECT" in sql_upper or "EXCEPT" in sql_upper,
+    }
+
+
+def _count_tables_in_sql(sql: str) -> int:
+    """
+    Estimate number of tables used in SQL.
+    估计 SQL 中使用的表数量。
+    """
+    sql_upper = sql.upper()
+    # Count FROM and JOIN occurrences
+    from_count = sql_upper.count(" FROM ")
+    join_count = sql_upper.count(" JOIN ")
+    return max(1, from_count + join_count)
+
+
+def comprehensive_evaluation(
+    model,
+    tokenizer,
+    eval_data: List[Dict],
+    train_data: Optional[List[Dict]] = None,
+    max_samples: Optional[int] = None,
+    use_egd: bool = False,
+    egd_candidates: int = 5,
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Comprehensive evaluation with multi-dimensional statistics.
+    综合评估，包含多维度统计。
+    
+    This is the ultimate test function that:
+    这是终极测试函数，包含：
+    1. Runs evaluate_with_execution for EM + EX (运行 EM + EX 评估)
+    2. Statistics by database (按数据库统计)
+    3. Statistics by SQL operation type (按 SQL 操作类型统计)
+    4. Statistics by complexity (按复杂度统计)
+    5. Training data distribution (训练数据分布)
+    
+    Args:
+        model: The language model (语言模型)
+        tokenizer: The tokenizer (分词器)
+        eval_data: Evaluation data with 'db_id', 'question', 'schema', 'sql' fields
+        train_data: Optional training data for sample counts (可选训练数据)
+        max_samples: Max samples to evaluate (最大评估样本数)
+        use_egd: Whether to use EGD (是否使用 EGD)
+        egd_candidates: Number of EGD candidates (EGD 候选数量)
+        verbose: Print detailed results (是否打印详细结果)
+    
+    Returns:
+        Dict containing:
+        - overall: Overall EM and EX metrics
+        - by_database: Per-database statistics
+        - by_operation: Per-operation statistics  
+        - by_complexity: Per-complexity level statistics
+        - results: Detailed per-sample results
+    """
+    if verbose:
+        print("=" * 80)
+        print("COMPREHENSIVE EVALUATION / 综合评估")
+        print("=" * 80)
+    
+    # Step 1: Run evaluate_with_execution
+    if verbose:
+        print("\n[Step 1] Running EM + EX Evaluation...")
+    
+    eval_results = evaluate_with_execution(
+        model=model,
+        tokenizer=tokenizer,
+        eval_data=eval_data,
+        max_samples=max_samples,
+        use_egd=use_egd,
+        egd_candidates=egd_candidates,
+        verbose=verbose,
+    )
+    
+    results = eval_results["results"]
+    
+    # Get the evaluated data (in case max_samples was used)
+    if max_samples:
+        eval_data = eval_data[:max_samples]
+    
+    # Count training samples per database
+    train_counts = defaultdict(int)
+    if train_data:
+        for ex in train_data:
+            db_id = ex.get('db_id', 'unknown')
+            train_counts[db_id] += 1
+    
+    # ==========================================================================
+    # Step 2: Statistics by Database
+    # ==========================================================================
+    if verbose:
+        print("\n" + "=" * 80)
+        print("[Step 2] Statistics by Database / 按数据库统计")
+        print("=" * 80)
+    
+    db_stats = defaultdict(lambda: {"em": 0, "ex": 0, "total": 0, "train": 0})
+    
+    for ex, res in zip(eval_data, results):
+        db_id = ex.get('db_id', 'unknown')
+        db_stats[db_id]["total"] += 1
+        db_stats[db_id]["train"] = train_counts.get(db_id, 0)
+        if res.get("exact_match", res.get("match", False)):
+            db_stats[db_id]["em"] += 1
+        if res.get("execution_match", res.get("match", False)):
+            db_stats[db_id]["ex"] += 1
+    
+    # Calculate accuracies and sort
+    db_results = {}
+    for db_id, stats in db_stats.items():
+        db_results[db_id] = {
+            "eval_samples": stats["total"],
+            "train_samples": stats["train"],
+            "em_correct": stats["em"],
+            "ex_correct": stats["ex"],
+            "em_accuracy": 100 * stats["em"] / stats["total"] if stats["total"] > 0 else 0,
+            "ex_accuracy": 100 * stats["ex"] / stats["total"] if stats["total"] > 0 else 0,
+        }
+    
+    if verbose:
+        print(f"\n{'Database':<35} {'Eval':>6} {'Train':>7} {'EM':>8} {'EX':>8}")
+        print("-" * 80)
+        sorted_dbs = sorted(db_results.items(), key=lambda x: x[1]["em_accuracy"])
+        for db_id, stats in sorted_dbs:
+            print(f"{db_id:<35} {stats['eval_samples']:>6} {stats['train_samples']:>7} "
+                  f"{stats['em_accuracy']:>7.1f}% {stats['ex_accuracy']:>7.1f}%")
+    
+    # ==========================================================================
+    # Step 3: Statistics by SQL Operation
+    # ==========================================================================
+    if verbose:
+        print("\n" + "=" * 80)
+        print("[Step 3] Statistics by SQL Operation / 按 SQL 操作统计")
+        print("=" * 80)
+    
+    operation_stats = defaultdict(lambda: {"em": 0, "ex": 0, "total": 0})
+    
+    for ex, res in zip(eval_data, results):
+        gold_sql = ex.get("sql", "")
+        ops = _detect_sql_operations(gold_sql)
+        is_em = res.get("exact_match", res.get("match", False))
+        is_ex = res.get("execution_match", res.get("match", False))
+        
+        for op_name, has_op in ops.items():
+            if has_op:
+                operation_stats[op_name]["total"] += 1
+                if is_em:
+                    operation_stats[op_name]["em"] += 1
+                if is_ex:
+                    operation_stats[op_name]["ex"] += 1
+    
+    op_results = {}
+    for op_name, stats in operation_stats.items():
+        op_results[op_name] = {
+            "total": stats["total"],
+            "em_correct": stats["em"],
+            "ex_correct": stats["ex"],
+            "em_accuracy": 100 * stats["em"] / stats["total"] if stats["total"] > 0 else 0,
+            "ex_accuracy": 100 * stats["ex"] / stats["total"] if stats["total"] > 0 else 0,
+        }
+    
+    if verbose:
+        print(f"\n{'Operation':<25} {'Count':>8} {'EM':>10} {'EX':>10}")
+        print("-" * 60)
+        sorted_ops = sorted(op_results.items(), key=lambda x: x[1]["em_accuracy"])
+        for op_name, stats in sorted_ops:
+            print(f"{op_name:<25} {stats['total']:>8} "
+                  f"{stats['em_accuracy']:>9.1f}% {stats['ex_accuracy']:>9.1f}%")
+    
+    # ==========================================================================
+    # Step 4: Statistics by Complexity
+    # ==========================================================================
+    if verbose:
+        print("\n" + "=" * 80)
+        print("[Step 4] Statistics by Complexity / 按复杂度统计")
+        print("=" * 80)
+    
+    complexity_stats = defaultdict(lambda: {"em": 0, "ex": 0, "total": 0})
+    
+    for ex, res in zip(eval_data, results):
+        # Determine complexity level
+        num_tables = ex.get("num_tables", 1)
+        has_join = ex.get("has_join", False)
+        gold_sql = ex.get("sql", "")
+        ops = _detect_sql_operations(gold_sql)
+        
+        # Complexity categories
+        if num_tables <= 1 and not has_join:
+            complexity = "simple (1 table)"
+        elif num_tables <= 2 and not ops["has_subquery"]:
+            complexity = "medium (2 tables)"
+        elif num_tables <= 4 and not ops["has_subquery"]:
+            complexity = "complex (3-4 tables)"
+        else:
+            complexity = "very_complex (5+ tables or subquery)"
+        
+        is_em = res.get("exact_match", res.get("match", False))
+        is_ex = res.get("execution_match", res.get("match", False))
+        
+        complexity_stats[complexity]["total"] += 1
+        if is_em:
+            complexity_stats[complexity]["em"] += 1
+        if is_ex:
+            complexity_stats[complexity]["ex"] += 1
+    
+    complexity_results = {}
+    for level, stats in complexity_stats.items():
+        complexity_results[level] = {
+            "total": stats["total"],
+            "em_correct": stats["em"],
+            "ex_correct": stats["ex"],
+            "em_accuracy": 100 * stats["em"] / stats["total"] if stats["total"] > 0 else 0,
+            "ex_accuracy": 100 * stats["ex"] / stats["total"] if stats["total"] > 0 else 0,
+        }
+    
+    if verbose:
+        print(f"\n{'Complexity':<35} {'Count':>8} {'EM':>10} {'EX':>10}")
+        print("-" * 70)
+        # Sort by complexity order
+        order = ["simple (1 table)", "medium (2 tables)", "complex (3-4 tables)", "very_complex (5+ tables or subquery)"]
+        for level in order:
+            if level in complexity_results:
+                stats = complexity_results[level]
+                print(f"{level:<35} {stats['total']:>8} "
+                      f"{stats['em_accuracy']:>9.1f}% {stats['ex_accuracy']:>9.1f}%")
+    
+    # ==========================================================================
+    # Summary
+    # ==========================================================================
+    if verbose:
+        print("\n" + "=" * 80)
+        print("SUMMARY / 总结")
+        print("=" * 80)
+        print(f"\nOverall Exact Match (EM):     {eval_results['exact_match_accuracy']:.2f}%")
+        print(f"Overall Execution Match (EX): {eval_results['execution_match_accuracy']:.2f}%")
+        print(f"Total Samples:                {eval_results['total']}")
+        
+        if train_data:
+            total_train = sum(train_counts.values())
+            print(f"Total Training Samples:       {total_train}")
+        
+        # Find worst performing databases
+        worst_dbs = sorted(db_results.items(), key=lambda x: x[1]["em_accuracy"])[:3]
+        print(f"\nWorst Performing Databases:")
+        for db_id, stats in worst_dbs:
+            print(f"  - {db_id}: EM {stats['em_accuracy']:.1f}%, EX {stats['ex_accuracy']:.1f}%")
+        
+        # Find hardest operations
+        worst_ops = sorted(op_results.items(), key=lambda x: x[1]["em_accuracy"])[:3]
+        print(f"\nHardest SQL Operations:")
+        for op_name, stats in worst_ops:
+            print(f"  - {op_name}: EM {stats['em_accuracy']:.1f}%, EX {stats['ex_accuracy']:.1f}% ({stats['total']} samples)")
+    
+    return {
+        "overall": {
+            "em_accuracy": eval_results['exact_match_accuracy'],
+            "ex_accuracy": eval_results['execution_match_accuracy'],
+            "em_correct": eval_results['exact_match_count'],
+            "ex_correct": eval_results['execution_match_count'],
+            "total": eval_results['total'],
+        },
+        "by_database": db_results,
+        "by_operation": op_results,
+        "by_complexity": complexity_results,
+        "results": results,
+        "train_distribution": dict(train_counts) if train_data else None,
+    }
 
 
 # =============================================================================
@@ -1479,6 +1688,265 @@ def load_jsonl(file_path: str) -> List[Dict]:
             if line.strip():  # Skip empty lines
                 data.append(json.loads(line))
     return data
+
+
+# =============================================================================
+# DATABASE-LEVEL ANALYSIS
+# =============================================================================
+
+def analyze_performance_by_database(
+    model,
+    tokenizer,
+    eval_data: List[Dict],
+    train_data: Optional[List[Dict]] = None,
+    max_samples_per_db: Optional[int] = None,
+    use_egd: bool = False,
+    egd_candidates: int = 5,
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Analyze model performance broken down by database.
+    按数据库分析模型性能。
+    
+    Args:
+        model: The language model
+        tokenizer: The tokenizer
+        eval_data: Evaluation data with 'db_id' field
+        train_data: Optional training data to count samples per database
+        max_samples_per_db: Max samples to evaluate per database (None = all)
+        use_egd: Whether to use EGD
+        egd_candidates: Number of EGD candidates
+        verbose: Print progress
+    
+    Returns:
+        Dict with per-database stats and overall summary
+    """
+    # Group eval data by database
+    db_groups = defaultdict(list)
+    for ex in eval_data:
+        db_id = ex.get('db_id', 'unknown')
+        db_groups[db_id].append(ex)
+    
+    # Count training samples per database
+    train_counts = defaultdict(int)
+    if train_data:
+        for ex in train_data:
+            db_id = ex.get('db_id', 'unknown')
+            train_counts[db_id] += 1
+    
+    # Evaluate each database
+    db_results = {}
+    total_em = 0
+    total_ex = 0
+    total_samples = 0
+    
+    if verbose:
+        print(f"Analyzing {len(db_groups)} databases...")
+        print("=" * 80)
+    
+    for db_id in sorted(db_groups.keys()):
+        samples = db_groups[db_id]
+        if max_samples_per_db:
+            samples = samples[:max_samples_per_db]
+        
+        if verbose:
+            print(f"\n[{db_id}] Evaluating {len(samples)} samples...", end=" ")
+        
+        # Evaluate this database
+        em_correct = 0
+        ex_correct = 0
+        results_list = []
+        
+        # Check if DuckDB is available for full EX evaluation
+        try:
+            import duckdb
+            has_duckdb = True
+        except ImportError:
+            has_duckdb = False
+        
+        for ex in samples:
+            # Generate SQL
+            pred_sql = generate_sql(
+                model, tokenizer,
+                ex["question"],
+                ex["schema"],
+                use_egd=use_egd,
+                egd_candidates=egd_candidates,
+            )
+            
+            gold_sql = ex["sql"]
+            schema = ex["schema"]
+            
+            # Exact Match
+            gold_norm = normalize_sql(gold_sql)
+            pred_norm = normalize_sql(pred_sql)
+            is_em = gold_norm == pred_norm
+            
+            if is_em:
+                em_correct += 1
+            
+            # Execution Match (full EX using execute_sql_on_schema)
+            # If EM is True, EX is also True
+            is_ex = is_em
+            
+            # Only try execution if EM is False (to find additional matches)
+            if not is_em and has_duckdb:
+                # Execute gold SQL
+                gold_success, gold_result, gold_error = execute_sql_on_schema(gold_sql, schema)
+                
+                # Execute predicted SQL
+                pred_success, pred_result, pred_error = execute_sql_on_schema(pred_sql, schema)
+                
+                if gold_success and pred_success:
+                    # Compare results
+                    is_ex = compare_execution_results(gold_result, pred_result)
+            
+            if is_ex:
+                ex_correct += 1
+            
+            results_list.append({
+                "question": ex["question"],
+                "gold_sql": gold_sql,
+                "pred_sql": pred_sql,
+                "em": is_em,
+                "ex": is_ex,
+            })
+        
+        # Calculate metrics
+        n = len(samples)
+        em_acc = 100 * em_correct / n if n > 0 else 0
+        ex_acc = 100 * ex_correct / n if n > 0 else 0
+        train_count = train_counts.get(db_id, 0)
+        
+        db_results[db_id] = {
+            "eval_samples": n,
+            "train_samples": train_count,
+            "em_correct": em_correct,
+            "ex_correct": ex_correct,
+            "em_accuracy": em_acc,
+            "ex_accuracy": ex_acc,
+            "results": results_list,
+        }
+        
+        total_em += em_correct
+        total_ex += ex_correct
+        total_samples += n
+        
+        if verbose:
+            train_info = f", Train: {train_count}" if train_data else ""
+            print(f"EM: {em_acc:.1f}%, EX: {ex_acc:.1f}%{train_info}")
+    
+    # Overall summary
+    overall_em = 100 * total_em / total_samples if total_samples > 0 else 0
+    overall_ex = 100 * total_ex / total_samples if total_samples > 0 else 0
+    
+    if verbose:
+        print("\n" + "=" * 80)
+        print(f"OVERALL: EM: {overall_em:.1f}%, EX: {overall_ex:.1f}% ({total_samples} samples)")
+        print("=" * 80)
+        
+        # Print sorted summary table
+        print("\n" + "=" * 80)
+        print(f"{'Database':<35} {'Eval':>6} {'Train':>7} {'EM':>8} {'EX':>8}")
+        print("-" * 80)
+        
+        # Sort by EM accuracy
+        sorted_dbs = sorted(db_results.items(), key=lambda x: x[1]["em_accuracy"])
+        
+        for db_id, stats in sorted_dbs:
+            print(f"{db_id:<35} {stats['eval_samples']:>6} {stats['train_samples']:>7} "
+                  f"{stats['em_accuracy']:>7.1f}% {stats['ex_accuracy']:>7.1f}%")
+        
+        print("-" * 80)
+        print(f"{'TOTAL':<35} {total_samples:>6} {sum(train_counts.values()):>7} "
+              f"{overall_em:>7.1f}% {overall_ex:>7.1f}%")
+        print("=" * 80)
+    
+    return {
+        "by_database": db_results,
+        "overall": {
+            "em_accuracy": overall_em,
+            "ex_accuracy": overall_ex,
+            "total_samples": total_samples,
+            "total_em_correct": total_em,
+            "total_ex_correct": total_ex,
+        },
+        "train_distribution": dict(train_counts) if train_data else None,
+    }
+
+
+def analyze_performance_by_database_fast(
+    eval_data: List[Dict],
+    predictions: List[str],
+    train_data: Optional[List[Dict]] = None,
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Fast analysis when predictions are already available.
+    快速分析（当预测结果已经存在时）。
+    
+    Args:
+        eval_data: Evaluation data with 'db_id', 'sql' fields
+        predictions: List of predicted SQL strings (same order as eval_data)
+        train_data: Optional training data for sample counts
+        verbose: Print results
+    
+    Returns:
+        Dict with per-database stats
+    """
+    assert len(eval_data) == len(predictions), "Data and predictions must match"
+    
+    # Count training samples per database
+    train_counts = defaultdict(int)
+    if train_data:
+        for ex in train_data:
+            db_id = ex.get('db_id', 'unknown')
+            train_counts[db_id] += 1
+    
+    # Group by database and compute metrics
+    db_stats = defaultdict(lambda: {"em_correct": 0, "total": 0, "train": 0})
+    
+    for ex, pred in zip(eval_data, predictions):
+        db_id = ex.get('db_id', 'unknown')
+        gold_norm = normalize_sql(ex["sql"])
+        pred_norm = normalize_sql(pred)
+        
+        db_stats[db_id]["total"] += 1
+        db_stats[db_id]["train"] = train_counts.get(db_id, 0)
+        
+        if gold_norm == pred_norm:
+            db_stats[db_id]["em_correct"] += 1
+    
+    # Calculate accuracies
+    results = {}
+    for db_id, stats in db_stats.items():
+        results[db_id] = {
+            "eval_samples": stats["total"],
+            "train_samples": stats["train"],
+            "em_correct": stats["em_correct"],
+            "em_accuracy": 100 * stats["em_correct"] / stats["total"] if stats["total"] > 0 else 0,
+        }
+    
+    if verbose:
+        print("=" * 80)
+        print(f"{'Database':<35} {'Eval':>6} {'Train':>7} {'EM':>8}")
+        print("-" * 80)
+        
+        sorted_results = sorted(results.items(), key=lambda x: x[1]["em_accuracy"])
+        total_em = sum(r["em_correct"] for r in results.values())
+        total_samples = sum(r["eval_samples"] for r in results.values())
+        
+        for db_id, stats in sorted_results:
+            print(f"{db_id:<35} {stats['eval_samples']:>6} {stats['train_samples']:>7} "
+                  f"{stats['em_accuracy']:>7.1f}%")
+        
+        print("-" * 80)
+        overall_em = 100 * total_em / total_samples if total_samples > 0 else 0
+        print(f"{'TOTAL':<35} {total_samples:>6} {sum(train_counts.values()):>7} "
+              f"{overall_em:>7.1f}%")
+        print("=" * 80)
+    
+    return results
 
 
 # =============================================================================
