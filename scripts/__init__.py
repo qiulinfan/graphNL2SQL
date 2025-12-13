@@ -44,7 +44,6 @@ from .training_utils import (
 from .testing_utils import (
     generate_sql,
     load_finetuned_model,
-    evaluate_model,
     run_quick_test,
     run_interactive_test,
     # EGD functions
@@ -52,6 +51,13 @@ from .testing_utils import (
     generate_sql_with_egd,
     evaluate_with_egd,
     validate_sql_syntax,
+    # Database filtering functions
+    filter_eval_data,
+    get_database_distribution,
+    show_database_distribution,
+    # Comprehensive evaluation
+    comprehensive_evaluation,
+    evaluate_with_execution,
 )
 
 __all__ = [
@@ -66,7 +72,11 @@ __all__ = [
     "load_datasets", "load_model_and_tokenizer", "setup_lora",
     "train_phase1_wikisql", "train_phase2_spider", "init_wandb",
     # Testing
-    "generate_sql", "load_finetuned_model", "evaluate_model",
+    "generate_sql", "load_finetuned_model",
     "run_quick_test", "run_interactive_test",
+    # Database filtering
+    "filter_eval_data", "get_database_distribution", "show_database_distribution",
+    # Comprehensive evaluation
+    "comprehensive_evaluation", "evaluate_with_execution",
 ]
 

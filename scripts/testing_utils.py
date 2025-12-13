@@ -1008,6 +1008,116 @@ def test_with_ecommerce_schema(model, tokenizer) -> List[Dict[str, str]]:
     )
 
 
+def filter_eval_data(
+    eval_data: List[Dict],
+    exclude_databases: Optional[List[str]] = None,
+    include_databases: Optional[List[str]] = None,
+    verbose: bool = True,
+) -> List[Dict]:
+    """
+    Filter evaluation data by database.
+    按数据库过滤评估数据。
+    
+    Function / 功能:
+        Filters eval_data to exclude or include specific databases.
+        Can be used to remove problematic databases (like car_1) from evaluation.
+        过滤 eval_data 以排除或包含特定数据库。
+    
+    Args / 参数:
+        eval_data: List of evaluation examples with 'db_id' field
+                   包含 'db_id' 字段的评估样本列表
+        exclude_databases: List of database IDs to exclude (排除的数据库列表)
+        include_databases: List of database IDs to include (only these) (只包含的数据库列表)
+        verbose: Print filter statistics (打印过滤统计信息)
+        
+    Returns / 返回:
+        List[Dict]: Filtered evaluation data (过滤后的评估数据)
+        
+    Example / 示例:
+        # Remove car_1 from evaluation (从评估中移除 car_1)
+        filtered = filter_eval_data(spider_dev, exclude_databases=['car_1'])
+        
+        # Only evaluate on specific databases (只在特定数据库上评估)
+        filtered = filter_eval_data(spider_dev, include_databases=['concert_singer', 'pets_1'])
+    """
+    original_count = len(eval_data)
+    
+    # Get all unique databases first
+    all_dbs = set(ex.get('db_id', 'unknown') for ex in eval_data)
+    
+    if include_databases:
+        # Filter to include only specified databases
+        filtered = [ex for ex in eval_data if ex.get('db_id', 'unknown') in include_databases]
+        excluded_dbs = all_dbs - set(include_databases)
+    elif exclude_databases:
+        # Filter to exclude specified databases
+        filtered = [ex for ex in eval_data if ex.get('db_id', 'unknown') not in exclude_databases]
+        excluded_dbs = set(exclude_databases) & all_dbs
+    else:
+        # No filtering
+        return eval_data
+    
+    if verbose:
+        print(f"Database Filter Applied / 数据库过滤已应用:")
+        print(f"  Original samples: {original_count}")
+        print(f"  Filtered samples: {len(filtered)}")
+        print(f"  Removed samples:  {original_count - len(filtered)}")
+        if exclude_databases:
+            print(f"  Excluded DBs: {exclude_databases}")
+        if include_databases:
+            print(f"  Included DBs: {include_databases}")
+        
+        # Show count per excluded database
+        if excluded_dbs:
+            print(f"\n  Samples removed per database:")
+            for db_id in sorted(excluded_dbs):
+                count = sum(1 for ex in eval_data if ex.get('db_id') == db_id)
+                print(f"    - {db_id}: {count} samples")
+    
+    return filtered
+
+
+def get_database_distribution(eval_data: List[Dict]) -> Dict[str, int]:
+    """
+    Get the distribution of samples per database.
+    获取每个数据库的样本分布。
+    
+    Args / 参数:
+        eval_data: List of evaluation examples with 'db_id' field
+        
+    Returns / 返回:
+        Dict[str, int]: Database ID to sample count mapping
+    """
+    distribution = defaultdict(int)
+    for ex in eval_data:
+        db_id = ex.get('db_id', 'unknown')
+        distribution[db_id] += 1
+    return dict(sorted(distribution.items(), key=lambda x: -x[1]))
+
+
+def show_database_distribution(eval_data: List[Dict], top_n: int = 20) -> None:
+    """
+    Print the distribution of samples per database.
+    打印每个数据库的样本分布。
+    
+    Args / 参数:
+        eval_data: List of evaluation examples with 'db_id' field
+        top_n: Number of top databases to show
+    """
+    dist = get_database_distribution(eval_data)
+    
+    print(f"\nDatabase Distribution ({len(dist)} databases, {len(eval_data)} total samples):")
+    print("-" * 50)
+    
+    for i, (db_id, count) in enumerate(dist.items()):
+        if i >= top_n:
+            remaining = len(dist) - top_n
+            print(f"  ... and {remaining} more databases")
+            break
+        pct = 100 * count / len(eval_data)
+        print(f"  {db_id}: {count} ({pct:.1f}%)")
+
+
 # =============================================================================
 # EXECUTION-GUIDED DECODING (EGD)
 # 执行引导解码
