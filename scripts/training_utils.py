@@ -361,8 +361,11 @@ def show_sample_examples(
         
         # Show full input (includes schema linking if present)
         # 显示完整的 input（如果包含 schema linking 也会显示）
-        input_text = example.get('input', '')
-        if input_text and input_text.strip():
+        input_text = example.get('input', None)
+        
+        # Always check and show input field status
+        # 总是检查并显示 input 字段状态
+        if input_text is not None and input_text and input_text.strip():
             print(f"\nFull Input (with schema linking if enabled):")
             print("-" * 60)
             # Show first 1000 chars, or full if shorter
@@ -371,20 +374,21 @@ def show_sample_examples(
             else:
                 print(input_text)
         else:
-            # Debug: show why input is not displayed
-            # 调试：显示为什么没有显示 input
-            if 'input' in example:
-                input_val = example['input']
-                print(f"\n⚠️ Input field exists but appears empty")
-                print(f"   Type: {type(input_val)}")
-                if input_val:
-                    print(f"   Length: {len(input_val)}")
-                    print(f"   First 100 chars: {repr(input_val[:100])}")
+            # Debug: always show input field status
+            # 调试：总是显示 input 字段状态
+            if input_text is not None:
+                print(f"\n⚠️ Input field exists but is empty or whitespace only")
+                print(f"   Type: {type(input_text)}, Length: {len(input_text) if input_text else 0}")
+                if input_text:
+                    print(f"   First 100 chars: {repr(input_text[:100])}")
                 else:
-                    print(f"   Value: {repr(input_val)}")
+                    print(f"   Value: {repr(input_text)}")
+            else:
+                print(f"\n⚠️ Input field not found in example")
+                print(f"   Available keys: {list(example.keys())}")
             # Fallback to schema only if input not available
             # 如果没有 input，回退到只显示 schema
-            print(f"\nSchema preview:")
+            print(f"\nSchema preview (fallback):")
             schema = example.get('schema', 'N/A')
             print(schema[:500] + "..." if len(schema) > 500 else schema)
     
@@ -398,8 +402,11 @@ def show_sample_examples(
         
         # Show full input (includes schema linking if present)
         # 显示完整的 input（如果包含 schema linking 也会显示）
-        input_text = example.get('input', '')
-        if input_text and input_text.strip():
+        input_text = example.get('input', None)
+        
+        # Always check and show input field status
+        # 总是检查并显示 input 字段状态
+        if input_text is not None and input_text and input_text.strip():
             print(f"\nFull Input (with schema linking if enabled):")
             print("-" * 60)
             # Show first 1000 chars, or full if shorter
@@ -408,20 +415,21 @@ def show_sample_examples(
             else:
                 print(input_text)
         else:
-            # Debug: show why input is not displayed
-            # 调试：显示为什么没有显示 input
-            if 'input' in example:
-                input_val = example['input']
-                print(f"\n⚠️ Input field exists but appears empty")
-                print(f"   Type: {type(input_val)}")
-                if input_val:
-                    print(f"   Length: {len(input_val)}")
-                    print(f"   First 100 chars: {repr(input_val[:100])}")
+            # Debug: always show input field status
+            # 调试：总是显示 input 字段状态
+            if input_text is not None:
+                print(f"\n⚠️ Input field exists but is empty or whitespace only")
+                print(f"   Type: {type(input_text)}, Length: {len(input_text) if input_text else 0}")
+                if input_text:
+                    print(f"   First 100 chars: {repr(input_text[:100])}")
                 else:
-                    print(f"   Value: {repr(input_val)}")
+                    print(f"   Value: {repr(input_text)}")
+            else:
+                print(f"\n⚠️ Input field not found in example")
+                print(f"   Available keys: {list(example.keys())}")
             # Fallback to schema only if input not available
             # 如果没有 input，回退到只显示 schema
-            print(f"\nSchema preview:")
+            print(f"\nSchema preview (fallback):")
             schema = example.get('schema', 'N/A')
             print(schema[:500] + "..." if len(schema) > 500 else schema)
 
