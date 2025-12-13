@@ -121,8 +121,7 @@ def load_training_data(config: FullConfig, phase: str = "wikisql") -> tuple[Data
     # Apply sample limits if specified
     if config.data.max_train_samples:
         train_data = train_data[:config.data.max_train_samples]
-    if config.data.max_eval_samples:
-        eval_data = eval_data[:config.data.max_eval_samples]
+    # Note: max_eval_samples removed - set in testing cells instead
 
     train_dataset = Dataset.from_list(train_data)
     eval_dataset = Dataset.from_list(eval_data)

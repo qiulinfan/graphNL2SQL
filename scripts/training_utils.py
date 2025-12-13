@@ -93,7 +93,6 @@ class TrainingConfig:
     
     # Limits
     max_train_samples: Optional[int] = None
-    max_eval_samples: int = 500
     
     # Saving
     save_strategy: str = "epoch"
@@ -170,7 +169,6 @@ def load_config_from_json(config_path: str = "config.json") -> TrainingConfig:
         data_dir=data["data"]["data_dir"],
         output_dir=data["data"]["output_dir"],
         max_train_samples=data["data"]["max_train_samples"],
-        max_eval_samples=data["data"]["max_eval_samples"],
         # WandB
         use_wandb=data["wandb"]["enabled"],
         wandb_project=data["wandb"]["project"],
@@ -228,7 +226,6 @@ def save_config_to_json(config: TrainingConfig, config_path: str = "config.json"
             "data_dir": config.data_dir,
             "output_dir": config.output_dir,
             "max_train_samples": config.max_train_samples,
-            "max_eval_samples": config.max_eval_samples,
         },
         "wandb": {
             "enabled": config.use_wandb,
@@ -832,7 +829,8 @@ def train_phase1_wikisql(
     )
     wikisql_eval_dataset = prepare_dataset(
         wikisql_dev_data, tokenizer, config.max_seq_length,
-        config.max_eval_samples, "WikiSQL eval"
+        None,  # No limit on eval samples during training
+        "WikiSQL eval"
     )
     
     print(f"\n WikiSQL Dataset Ready:")
@@ -983,7 +981,8 @@ def train_phase2_spider(
     )
     spider_eval_dataset = prepare_dataset(
         spider_dev_data, tokenizer, config.max_seq_length,
-        config.max_eval_samples, "Spider eval"
+        None,  # No limit on eval samples during training
+        "Spider eval"
     )
     
     print(f"\n Spider Dataset Ready:")

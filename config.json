@@ -38,8 +38,7 @@
   "data": {
     "data_dir": "./training_data",
     "output_dir": "./checkpoints",
-    "max_train_samples": null,
-    "max_eval_samples": 500
+    "max_train_samples": null
   },
   "wandb": {
     "enabled": true,
