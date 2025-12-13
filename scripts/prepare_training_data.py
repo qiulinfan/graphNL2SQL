@@ -683,7 +683,8 @@ def process_spider(
     linearization_style: str = "basic",
     max_examples: int = None,
     include_semantic_links: bool = False,
-    semantic_threshold: float = 0.7
+    semantic_threshold: float = 0.7,
+    include_schema_linking: bool = False,
 ) -> list[dict]:
     """
     Process Spider dataset into training examples.

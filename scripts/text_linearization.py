@@ -490,7 +490,10 @@ def format_training_example(
     schema_text: str,
     sql: str = None,
     include_instruction: bool = True,
-    use_structured_format: bool = True
+    use_structured_format: bool = True,
+    schema_graph = None,
+    include_schema_linking: bool = False,
+    prompt_style: str = "detailed",  # "simple", "detailed", "expert", "few_shot"
 ) -> dict:
     """
     Format a complete training example with schema, question, and SQL.
@@ -503,7 +506,65 @@ def format_training_example(
         sql: Target SQL query
         include_instruction: Whether to include instruction prefix
         use_structured_format: Use [QUESTION] and [SQL] section tags (recommended)
+        schema_graph: SchemaGraph object (required if include_schema_linking=True)
+        include_schema_linking: Whether to add schema linking annotations
+        prompt_style: Prompt style - "simple", "detailed", "expert", or "few_shot"
     """
+    # Use new prompt templates if style is not "simple"
+    if prompt_style != "simple" and use_structured_format:
+        try:
+            from .prompt_templates import PromptStyle, format_for_training
+        except ImportError:
+            try:
+                from prompt_templates import PromptStyle, format_for_training
+            except ImportError:
+                # Fall back to simple format if prompt_templates not available
+                prompt_style = "simple"
+        
+        if prompt_style != "simple":
+            # Perform schema linking if requested
+            schema_links_text = None
+            if include_schema_linking and schema_graph is not None:
+                try:
+                    from .schema_linking import perform_schema_linking, format_schema_links_for_prompt
+                except ImportError:
+                    from schema_linking import perform_schema_linking, format_schema_links_for_prompt
+                
+                links = perform_schema_linking(question, schema_graph)
+                schema_links_text = format_schema_links_for_prompt(links)
+            
+            # Map string to enum
+            style_map = {
+                "simple": PromptStyle.SIMPLE,
+                "detailed": PromptStyle.DETAILED,
+                "expert": PromptStyle.EXPERT,
+                "few_shot": PromptStyle.FEW_SHOT,
+            }
+            style = style_map.get(prompt_style, PromptStyle.DETAILED)
+            
+            result = format_for_training(
+                schema=schema_text,
+                question=question,
+                sql=sql or "",
+                style=style,
+                schema_links=schema_links_text,
+            )
+            return result
+    
+    # Fall back to original simple format
+    # Perform schema linking if requested
+    schema_links_text = ""
+    if include_schema_linking and schema_graph is not None:
+        try:
+            from .schema_linking import perform_schema_linking, format_schema_links_for_prompt
+        except ImportError:
+            from schema_linking import perform_schema_linking, format_schema_links_for_prompt
+        
+        links = perform_schema_linking(question, schema_graph)
+        schema_links_text = format_schema_links_for_prompt(links)
+        if schema_links_text:
+            schema_links_text = "\n\n" + schema_links_text
+    
     if use_structured_format:
         # New structured format with section tags
         if include_instruction:
@@ -511,9 +572,9 @@ def format_training_example(
                 "Given the following database schema and question, "
                 "generate the SQL query that answers the question."
             )
-            input_text = f"{instruction}\n\n{schema_text}\n\n[QUESTION]\n{question}"
+            input_text = f"{instruction}\n\n{schema_text}{schema_links_text}\n\n[QUESTION]\n{question}"
         else:
-            input_text = f"{schema_text}\n\n[QUESTION]\n{question}"
+            input_text = f"{schema_text}{schema_links_text}\n\n[QUESTION]\n{question}"
 
         result = {
             "input": input_text,

@@ -87,16 +87,33 @@ def generate_sql(
             verbose=False
         )
         return egd_result["sql"]
-    system_msg = (
-        "You are a SQL expert. Given a database schema and a natural language question, "
-        "generate the correct SQL query. Output only the SQL query."
-    )
-
-    instruction = (
-        "Given the following database schema and question, "
-        "generate the SQL query that answers the question."
-    )
-    user_input = f"{instruction}\n\n{schema}\n\n[QUESTION]\n{question}"
+    
+    # Try to use improved prompt templates
+    try:
+        from prompt_templates import PromptStyle, get_system_message, format_for_inference
+        use_improved_prompt = True
+    except ImportError:
+        use_improved_prompt = False
+    
+    if use_improved_prompt:
+        # Use improved prompt system
+        system_msg = get_system_message(PromptStyle.DETAILED)
+        user_input = format_for_inference(
+            schema=schema,
+            question=question,
+            style=PromptStyle.DETAILED,
+        )
+    else:
+        # Fall back to simple prompt
+        system_msg = (
+            "You are a SQL expert. Given a database schema and a natural language question, "
+            "generate the correct SQL query. Output only the SQL query."
+        )
+        instruction = (
+            "Given the following database schema and question, "
+            "generate the SQL query that answers the question."
+        )
+        user_input = f"{instruction}\n\n{schema}\n\n[QUESTION]\n{question}"
 
     prompt = f"""<|im_start|>system
 {system_msg}<|im_end|>

@@ -1,0 +1,119 @@
+示例：包含 Schema Linking 的完整训练数据
+
+============================================================
+完整的数据格式（JSON）
+============================================================
+
+{
+  "input": "...",  // 包含 schema + schema linking + question
+  "output": "[SQL]\nSELECT ...",  // SQL 查询
+  "schema": "...",  // 原始 schema 文本
+  "question": "...",  // 原始问题
+  "sql": "SELECT ..."  // SQL 查询（不含 [SQL] 标签）
+}
+
+============================================================
+INPUT 部分（包含 Schema Linking）
+============================================================
+
+Given the following database schema and question, generate the SQL query that answers the question.
+
+Guidelines:
+- Read the schema carefully to understand available tables and columns
+- Identify which tables and columns are relevant to the question
+- Determine if JOINs are needed (when accessing columns from multiple tables)
+- When using JOINs:
+  - Always define table aliases (e.g., FROM singer AS s)
+  - Always qualify column names with aliases (e.g., s.name, s.age)
+  - This prevents ambiguity and improves query clarity
+- Translate question constraints into WHERE conditions
+- Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals
+- Use ORDER BY for sorting requests
+- Use LIMIT for "top N" or "first N" requests
+- Ensure all column and table names match the schema exactly
+
+[SCHEMA]
+[DATABASE]
+concert_singer
+
+[TABLES]
+singer:
+    Singer_ID (PK)
+    Name
+    Country
+    Age
+    Song_name
+    Song_release_year
+concert:
+    concert_ID (PK)
+    concert_Name
+    Theme
+    Year
+    Stadium_ID (FK)
+stadium:
+    Stadium_ID (PK)
+    Location
+    Name
+    Capacity
+    Highest
+    Lowest
+    Average
+
+[FOREIGN KEYS]
+concert.Stadium_ID -> stadium.Stadium_ID
+
+[SCHEMA LINKS]
+Question word "singer" → table: singer (confidence: 1.00)
+Question word "name" → column: singer.Name (confidence: 1.00)
+Question word "country" → column: singer.Country (confidence: 1.00)
+Question word "age" → column: singer.Age (confidence: 1.00)
+Question word "25" → column: singer.Age (value, confidence: 0.90)
+
+[QUESTION]
+What are the names and countries of singers older than 25?
+
+============================================================
+OUTPUT 部分
+============================================================
+
+[SQL]
+SELECT s.Name, s.Country 
+FROM singer AS s 
+WHERE s.Age > 25
+
+============================================================
+完整示例（实际格式）
+============================================================
+
+{
+  "input": "Given the following database schema and question, generate the SQL query that answers the question.\n\nGuidelines:\n- Read the schema carefully to understand available tables and columns\n- Identify which tables and columns are relevant to the question\n- Determine if JOINs are needed (when accessing columns from multiple tables)\n- When using JOINs:\n  - Always define table aliases (e.g., FROM singer AS s)\n  - Always qualify column names with aliases (e.g., s.name, s.age)\n  - This prevents ambiguity and improves query clarity\n- Translate question constraints into WHERE conditions\n- Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals\n- Use ORDER BY for sorting requests\n- Use LIMIT for \"top N\" or \"first N\" requests\n- Ensure all column and table names match the schema exactly\n\n[SCHEMA]\n[DATABASE]\nconcert_singer\n\n[TABLES]\nsinger:\n    Singer_ID (PK)\n    Name\n    Country\n    Age\n    Song_name\n    Song_release_year\nconcert:\n    concert_ID (PK)\n    concert_Name\n    Theme\n    Year\n    Stadium_ID (FK)\nstadium:\n    Stadium_ID (PK)\n    Location\n    Name\n    Capacity\n    Highest\n    Lowest\n    Average\n\n[FOREIGN KEYS]\nconcert.Stadium_ID -> stadium.Stadium_ID\n\n[SCHEMA LINKS]\nQuestion word \"singer\" → table: singer (confidence: 1.00)\nQuestion word \"name\" → column: singer.Name (confidence: 1.00)\nQuestion word \"country\" → column: singer.Country (confidence: 1.00)\nQuestion word \"age\" → column: singer.Age (confidence: 1.00)\nQuestion word \"25\" → column: singer.Age (value, confidence: 0.90)\n\n[QUESTION]\nWhat are the names and countries of singers older than 25?",
+  
+  "output": "[SQL]\nSELECT s.Name, s.Country \nFROM singer AS s \nWHERE s.Age > 25",
+  
+  "schema": "[DATABASE]\nconcert_singer\n\n[TABLES]\nsinger:\n    Singer_ID (PK)\n    Name\n    Country\n    Age\n    Song_name\n    Song_release_year\nconcert:\n    concert_ID (PK)\n    concert_Name\n    Theme\n    Year\n    Stadium_ID (FK)\nstadium:\n    Stadium_ID (PK)\n    Location\n    Name\n    Capacity\n    Highest\n    Lowest\n    Average\n\n[FOREIGN KEYS]\nconcert.Stadium_ID -> stadium.Stadium_ID",
+  
+  "question": "What are the names and countries of singers older than 25?",
+  
+  "sql": "SELECT s.Name, s.Country \nFROM singer AS s \nWHERE s.Age > 25"
+}
+
+============================================================
+关键部分说明
+============================================================
+
+1. [SCHEMA LINKS] 部分包含：
+   - 问题中提到的表名 → 映射到 schema 中的表
+   - 问题中提到的列名 → 映射到 schema 中的列（格式：table.column）
+   - 问题中的值 → 映射到可能的列（如 "25" → age 列）
+
+2. 每个链接包含：
+   - Question word: 问题中的词
+   - → schema element: 对应的 schema 元素
+   - link_type: "table", "column", 或 "value"
+   - confidence: 置信度 (0.0-1.0)
+
+3. Schema linking 帮助模型：
+   - 明确理解问题中的词对应哪个表/列
+   - 减少歧义（特别是同名列的情况）
+   - 提高生成 SQL 的准确性
+

@@ -98,6 +98,13 @@ class TrainingConfig:
     save_strategy: str = "epoch"
     save_total_limit: int = 3
     
+    # Model selection
+    # If True, loads best model based on eval_loss at end of training
+    # If False, keeps final checkpoint (recommended: evaluate all checkpoints manually)
+    # 如果为 True，在训练结束时根据 eval_loss 加载最佳模型
+    # 如果为 False，保留最终 checkpoint（推荐：手动评估所有 checkpoint）
+    load_best_model_at_end: bool = False
+    
     # Evaluation frequency (as fraction of epoch, e.g., 0.1 = every 0.1 epoch)
     # 验证频率（以 epoch 的分数表示，例如 0.1 = 每 0.1 个 epoch）
     eval_every_epoch_fraction: float = 0.1
@@ -164,6 +171,8 @@ def load_config_from_json(config_path: str = "config.json") -> TrainingConfig:
         # Save
         save_strategy=data["save"]["strategy"],
         save_total_limit=data["save"]["total_limit"],
+        # Model selection
+        load_best_model_at_end=data.get("training", {}).get("load_best_model_at_end", False),
         # Evaluation frequency
         eval_every_epoch_fraction=data.get("training", {}).get("eval_every_epoch_fraction", 0.1),
     )
@@ -201,6 +210,7 @@ def save_config_to_json(config: TrainingConfig, config_path: str = "config.json"
             "gradient_checkpointing": config.gradient_checkpointing,
             "use_bf16": config.use_bf16,
             "use_fp16": config.use_fp16,
+            "load_best_model_at_end": config.load_best_model_at_end,
             "eval_every_epoch_fraction": config.eval_every_epoch_fraction,
         },
         "data": {
@@ -762,7 +772,7 @@ def train_phase1_wikisql(
         save_strategy=save_strategy,
         save_steps=save_steps,
         save_total_limit=config.save_total_limit,
-        load_best_model_at_end=True,
+        load_best_model_at_end=config.load_best_model_at_end,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
         bf16=config.use_bf16,
@@ -912,7 +922,7 @@ def train_phase2_spider(
         save_strategy=save_strategy,
         save_steps=save_steps,
         save_total_limit=config.save_total_limit,
-        load_best_model_at_end=True,
+        load_best_model_at_end=config.load_best_model_at_end,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
         bf16=config.use_bf16,
@@ -1064,4 +1074,126 @@ CONFIGS = {
     "small_gpu": get_small_gpu_config,
     "large_gpu": get_large_gpu_config,
 }
+
+
+# =============================================================================
+# CHECKPOINT EVALUATION
+# =============================================================================
+
+def find_best_checkpoint(
+    checkpoint_dir: str,
+    eval_data: List[Dict],
+    config: TrainingConfig,
+    max_samples: int = 500,
+    metric: str = "execution_match",  # "exact_match" or "execution_match"
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Evaluate all checkpoints and find the best one based on EM/EX accuracy.
+    评估所有 checkpoint 并根据 EM/EX 准确率找到最佳模型。
+    
+    This is recommended over using eval_loss for model selection in NL2SQL,
+    as loss doesn't always correlate with actual SQL accuracy.
+    这比使用 eval_loss 选择模型更推荐，因为 loss 不一定与实际 SQL 准确率相关。
+    
+    Args:
+        checkpoint_dir: Directory containing checkpoints (e.g., "./checkpoints/phase2_spider")
+        eval_data: Evaluation dataset
+        config: Training configuration
+        max_samples: Maximum samples to evaluate per checkpoint
+        metric: "exact_match" or "execution_match"
+        verbose: Print progress
+        
+    Returns:
+        Dict with best checkpoint path and evaluation results
+    """
+    from pathlib import Path
+    from glob import glob
+    from testing_utils import load_finetuned_model, evaluate_with_execution, evaluate_model
+    
+    checkpoint_dir = Path(checkpoint_dir)
+    
+    # Find all checkpoints
+    checkpoints = sorted(glob(str(checkpoint_dir / "checkpoint-*")))
+    if not checkpoints:
+        # Try final checkpoint
+        final_ckpt = checkpoint_dir / "final"
+        if final_ckpt.exists():
+            checkpoints = [str(final_ckpt)]
+        else:
+            raise ValueError(f"No checkpoints found in {checkpoint_dir}")
+    
+    if verbose:
+        print(f"Found {len(checkpoints)} checkpoints to evaluate")
+        print(f"Using metric: {metric}")
+        print("=" * 60)
+    
+    best_metric = -1
+    best_checkpoint = None
+    all_results = []
+    
+    for i, ckpt_path in enumerate(checkpoints, 1):
+        if verbose:
+            print(f"\n[{i}/{len(checkpoints)}] Evaluating {Path(ckpt_path).name}...")
+        
+        try:
+            # Load model
+            model, tokenizer = load_finetuned_model(
+                str(ckpt_path),
+                config.model_name,
+                config.load_in_4bit,
+                config.load_in_8bit,
+            )
+            
+            # Evaluate
+            if metric == "execution_match":
+                results = evaluate_with_execution(
+                    model, tokenizer, eval_data,
+                    max_samples=max_samples,
+                    verbose=False,
+                )
+                metric_value = results["execution_match_accuracy"]
+                em_value = results["exact_match_accuracy"]
+            else:
+                results = evaluate_model(
+                    model, tokenizer, eval_data,
+                    max_samples=max_samples,
+                    verbose=False,
+                )
+                metric_value = results["accuracy"]
+                em_value = results["accuracy"]
+            
+            all_results.append({
+                "checkpoint": ckpt_path,
+                "metric": metric_value,
+                "em": em_value,
+            })
+            
+            if verbose:
+                print(f"  {metric}: {metric_value:.2%}, EM: {em_value:.2%}")
+            
+            if metric_value > best_metric:
+                best_metric = metric_value
+                best_checkpoint = ckpt_path
+                
+        except Exception as e:
+            if verbose:
+                print(f"  Error: {e}")
+            continue
+    
+    if verbose:
+        print("\n" + "=" * 60)
+        print("BEST CHECKPOINT")
+        print("=" * 60)
+        print(f"Path: {best_checkpoint}")
+        print(f"{metric}: {best_metric:.2%}")
+        print("\nAll Results:")
+        for r in sorted(all_results, key=lambda x: x["metric"], reverse=True):
+            print(f"  {Path(r['checkpoint']).name}: {metric}={r['metric']:.2%}, EM={r['em']:.2%}")
+    
+    return {
+        "best_checkpoint": best_checkpoint,
+        "best_metric": best_metric,
+        "all_results": all_results,
+    }
 
