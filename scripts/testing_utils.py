@@ -701,45 +701,6 @@ def run_interactive_test(
     return results
 
 
-def run_batch_test(
-    model,
-    tokenizer,
-    test_cases: List[Dict[str, str]],
-) -> List[Dict[str, Any]]:
-    """
-    Run batch testing with multiple schema/question pairs.
-    
-    Args:
-        model: The language model
-        tokenizer: The tokenizer
-        test_cases: List of dicts with 'schema' and 'question' keys
-        
-    Returns:
-        List of results with question, schema, and generated SQL
-    """
-    print("=" * 60)
-    print("BATCH TESTING")
-    print("=" * 60)
-    
-    results = []
-    
-    for i, case in enumerate(test_cases):
-        schema = case["schema"]
-        question = case["question"]
-        
-        print(f"\n[{i+1}] Q: {question}")
-        sql = generate_sql(model, tokenizer, question, schema)
-        print(f"    SQL: {sql}")
-        
-        results.append({
-            "question": question,
-            "schema": schema,
-            "sql": sql,
-        })
-    
-    return results
-
-
 # =============================================================================
 # PREDEFINED TEST SCHEMAS
 # =============================================================================
@@ -1630,6 +1591,8 @@ def test_all_checkpoints(
         try:
             # Load model
             # 加载模型
+            if verbose:
+                print("  Loading model...")
             model, tokenizer = load_finetuned_model(
                 str(checkpoint_path),
                 base_model_name=base_model_name,
@@ -1639,10 +1602,12 @@ def test_all_checkpoints(
             
             # Evaluate
             # 评估
+            if verbose:
+                print(f"  Evaluating on {len(eval_data)} samples...")
             results = evaluate_with_execution(
                 model, tokenizer, eval_data,
                 max_samples=None,  # Already limited above
-                verbose=False,  # Suppress per-checkpoint verbose output
+                verbose=True,  # Show progress during evaluation
                 use_egd=use_egd,
                 egd_candidates=egd_candidates,
             )
@@ -1667,14 +1632,18 @@ def test_all_checkpoints(
             all_results[str(checkpoint_path)] = results
             
             if verbose:
-                print(f"  EM: {em_acc:.2f}% ({em_count}/{total})")
-                print(f"  EX: {ex_acc:.2f}% ({ex_count}/{total})")
+                print(f"  ✓ EM: {em_acc:.2f}% ({em_count}/{total})")
+                print(f"  ✓ EX: {ex_acc:.2f}% ({ex_count}/{total})")
                 print()
             
             # Clean up memory
             # 清理内存
+            if verbose:
+                print("  Cleaning up memory...")
             del model, tokenizer
             torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            if verbose:
+                print()
             
         except Exception as e:
             if verbose:

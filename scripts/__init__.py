@@ -38,7 +38,6 @@ from .training_utils import (
     setup_lora,
     train_phase1_wikisql,
     train_phase2_spider,
-    finish_training,
     init_wandb,
 )
 
@@ -65,7 +64,7 @@ __all__ = [
     # Training
     "TrainingConfig", "load_config_from_json", "save_config_to_json",
     "load_datasets", "load_model_and_tokenizer", "setup_lora",
-    "train_phase1_wikisql", "train_phase2_spider", "finish_training", "init_wandb",
+    "train_phase1_wikisql", "train_phase2_spider", "init_wandb",
     # Testing
     "generate_sql", "load_finetuned_model", "evaluate_model",
     "run_quick_test", "run_interactive_test",
