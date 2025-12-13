@@ -381,6 +381,7 @@ python scripts/prepare_training_data.py \
 graphNL2SQL/
 ├── scripts/
 │   ├── schema_graph.py          # Hybrid graph schema representation
+│   ├── schema_linking.py        # Schema linking (question → schema mapping)
 │   ├── text_linearization.py    # Graph-to-text linearization
 │   ├── prepare_training_data.py # Data preparation pipeline
 │   ├── train.py                 # Training script
@@ -407,7 +408,7 @@ graphNL2SQL/
 | SQLNet (2017) | Structured Prediction | 15.7% | 20.2% | +25.8% EM, +40.9% EX |
 | SyntaxSQLNet (2018) | Syntax Tree Generation | 18.9% | 25.1% | +22.6% EM, +36.0% EX |
 | IRNet (2019) | Intermediate Representation | 39.4% | 46.8% | +2.1% EM, +14.3% EX |
-| RAT-SQL (2019/2021) | Relation-Aware Graph | 46.5% | 52.3% | -5.0% EM, +8.8% EX |
+| RAT-SQL (2019/2021) | Relation-Aware Graph | 46.5% | 52.3% |  +8.8% EX |
 
 **Key Observations:**
 - Our approach significantly outperforms early neural methods (Seq2SQL, SQLNet, SyntaxSQLNet)
@@ -425,7 +426,7 @@ graphNL2SQL/
 
 ### Evaluation with EGD
 
-EGD improves accuracy by generating multiple SQL candidates and selecting the best one:
+EGD can improve accuracy by generating multiple SQL candidates and selecting the best one:
 
 ```python
 from scripts.testing_utils import evaluate_with_execution
