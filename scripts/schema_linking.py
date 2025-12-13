@@ -18,6 +18,18 @@ try:
 except ImportError:
     HAS_SENTENCE_TRANSFORMERS = False
 
+# Global model cache to avoid reloading
+_EMBEDDING_MODEL = None
+_EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
+
+
+def get_embedding_model():
+    """Get or create the embedding model (singleton pattern)."""
+    global _EMBEDDING_MODEL
+    if _EMBEDDING_MODEL is None and HAS_SENTENCE_TRANSFORMERS:
+        _EMBEDDING_MODEL = SentenceTransformer(_EMBEDDING_MODEL_NAME)
+    return _EMBEDDING_MODEL
+
 
 @dataclass
 class SchemaLink:
@@ -32,12 +44,19 @@ class SchemaLink:
 def extract_table_mentions(
     question: str,
     graph,
-    threshold: float = 0.6
+    threshold: float = 0.6,
+    use_embeddings: bool = True
 ) -> List[SchemaLink]:
     """
     Identify table names mentioned in the question.
     
-    Uses fuzzy matching and embedding similarity to find table mentions.
+    Uses fuzzy matching and optionally embedding similarity to find table mentions.
+    
+    Args:
+        question: Natural language question
+        graph: SchemaGraph object
+        threshold: Similarity threshold for embedding matching
+        use_embeddings: Whether to use embedding-based matching (slower but more accurate)
     """
     links = []
     question_lower = question.lower()
@@ -47,7 +66,7 @@ def extract_table_mentions(
     if not table_names:
         return links
     
-    # Direct string matching (exact or substring)
+    # Direct string matching (exact or substring) - fast and accurate
     for table_name in table_names:
         table_lower = table_name.lower()
         
@@ -65,7 +84,7 @@ def extract_table_mentions(
         elif any(word in table_lower for word in question_lower.split() if len(word) > 3):
             # Find matching word
             for word in question_lower.split():
-                if len(word) > 3 and word in table_lower or table_lower in word:
+                if len(word) > 3 and (word in table_lower or table_lower in word):
                     start = question_lower.find(word)
                     links.append(SchemaLink(
                         question_text=word,
@@ -75,18 +94,21 @@ def extract_table_mentions(
                         span=(start, start + len(word))
                     ))
     
-    # Embedding-based matching if available
-    if HAS_SENTENCE_TRANSFORMERS and len(table_names) > 0:
+    # Only use embedding-based matching if enabled and string matching found nothing
+    # This significantly speeds up processing
+    if use_embeddings and HAS_SENTENCE_TRANSFORMERS and len(table_names) > 0 and len(links) == 0:
         try:
-            model = SentenceTransformer('all-MiniLM-L6-v2')
+            model = get_embedding_model()
+            if model is None:
+                return links
             
             # Get embeddings for question words and table names
             question_words = [w for w in question_lower.split() if len(w) > 3]
             if not question_words:
                 return links
             
-            question_embeddings = model.encode(question_words, convert_to_numpy=True)
-            table_embeddings = model.encode([t.lower() for t in table_names], convert_to_numpy=True)
+            question_embeddings = model.encode(question_words, convert_to_numpy=True, show_progress_bar=False)
+            table_embeddings = model.encode([t.lower() for t in table_names], convert_to_numpy=True, show_progress_bar=False)
             
             # Compute similarities
             similarities = np.dot(question_embeddings, table_embeddings.T)
@@ -115,12 +137,19 @@ def extract_table_mentions(
 def extract_column_mentions(
     question: str,
     graph,
-    threshold: float = 0.6
+    threshold: float = 0.6,
+    use_embeddings: bool = True
 ) -> List[SchemaLink]:
     """
     Identify column names mentioned in the question.
     
-    Matches question words to column names using fuzzy matching and embeddings.
+    Matches question words to column names using fuzzy matching and optionally embeddings.
+    
+    Args:
+        question: Natural language question
+        graph: SchemaGraph object
+        threshold: Similarity threshold for embedding matching
+        use_embeddings: Whether to use embedding-based matching (slower but more accurate)
     """
     links = []
     question_lower = question.lower()
@@ -134,7 +163,7 @@ def extract_column_mentions(
     if not columns:
         return links
     
-    # Direct string matching
+    # Direct string matching - fast and accurate
     for table_name, col_name in columns:
         col_lower = col_name.lower()
         
@@ -162,10 +191,13 @@ def extract_column_mentions(
                         span=(start, start + len(col_word))
                     ))
     
-    # Embedding-based matching
-    if HAS_SENTENCE_TRANSFORMERS and len(columns) > 0:
+    # Only use embedding-based matching if enabled and few matches found
+    # This significantly speeds up processing
+    if use_embeddings and HAS_SENTENCE_TRANSFORMERS and len(columns) > 0 and len(links) < 3:
         try:
-            model = SentenceTransformer('all-MiniLM-L6-v2')
+            model = get_embedding_model()
+            if model is None:
+                return links
             
             question_words = [w for w in question_lower.split() if len(w) > 2]
             if not question_words:
@@ -184,8 +216,8 @@ def extract_column_mentions(
                         col_texts.append(word)
                         col_info.append((table_name, col_name, word))
             
-            question_embeddings = model.encode(question_words, convert_to_numpy=True)
-            col_embeddings = model.encode(col_texts, convert_to_numpy=True)
+            question_embeddings = model.encode(question_words, convert_to_numpy=True, show_progress_bar=False)
+            col_embeddings = model.encode(col_texts, convert_to_numpy=True, show_progress_bar=False)
             
             similarities = np.dot(question_embeddings, col_embeddings.T)
             
@@ -299,6 +331,7 @@ def perform_schema_linking(
     table_threshold: float = 0.6,
     column_threshold: float = 0.6,
     value_threshold: float = 0.5,
+    use_embeddings: bool = True,
 ) -> List[SchemaLink]:
     """
     Perform complete schema linking for a question.
@@ -322,11 +355,11 @@ def perform_schema_linking(
     all_links = []
     
     if include_tables:
-        table_links = extract_table_mentions(question, graph, table_threshold)
+        table_links = extract_table_mentions(question, graph, table_threshold, use_embeddings=use_embeddings)
         all_links.extend(table_links)
     
     if include_columns:
-        column_links = extract_column_mentions(question, graph, column_threshold)
+        column_links = extract_column_mentions(question, graph, column_threshold, use_embeddings=use_embeddings)
         all_links.extend(column_links)
     
     if include_values:
