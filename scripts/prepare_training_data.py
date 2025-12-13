@@ -259,7 +259,9 @@ def process_wikisql(
     max_examples: int = None,
     include_semantic_links: bool = False,
     semantic_threshold: float = 0.7,
-    balanced_sample: int = None
+    balanced_sample: int = None,
+    include_schema_linking: bool = False,
+    prompt_style: str = "detailed",
 ) -> list[dict]:
     """
     Process WikiSQL dataset into training examples.
@@ -315,7 +317,10 @@ def process_wikisql(
             question=question,
             schema_text=schema_text,
             sql=sql_string,
-            include_instruction=True
+            include_instruction=True,
+            schema_graph=graph,
+            include_schema_linking=include_schema_linking,
+            prompt_style=prompt_style,
         )
 
         # Add metadata
@@ -902,14 +907,18 @@ def prepare_all_data(
             wikisql_train = process_wikisql(
                 "train", linearization_style, max_wikisql,
                 include_semantic_links, semantic_threshold,
-                balanced_sample=wikisql_balanced
+                balanced_sample=wikisql_balanced,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
             # For dev, use smaller balanced sample or limit
             dev_balanced = min(wikisql_balanced // 5, 1000) if wikisql_balanced else None
             wikisql_dev = process_wikisql(
                 "dev", linearization_style, max_wikisql,
                 include_semantic_links, semantic_threshold,
-                balanced_sample=dev_balanced
+                balanced_sample=dev_balanced,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
 
             all_train_examples.extend(wikisql_train)

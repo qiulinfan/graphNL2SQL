@@ -1,0 +1,155 @@
+============================================================
+展开的训练数据示例（Manila 数据库）
+============================================================
+
+【原始压缩格式】
+Given the following database schema and question, generate the SQL query that answers the question.\n \nGuidelines:\n- Read the schema carefully to understand available tables and columns\n- Identify which tables and columns are relevant to the question\n- Determine if JOINs are needed (when accessing columns from multiple tables)\n- Translate question constraints into WHERE conditions\n- Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals\n- Use ORDER BY for sorting requests\n- Use LIMIT for "top N" or "first N" requests\n[SCHEMA]\n[TABLES]\nManila:\n District (PK)\n s Barangay\n Population (2010 census)\n Area ( has .)\n Pop. density (per km2)\n\n[QUESTION]\nWhat is the total of Barangay with an area larger than 865.13?
+
+
+============================================================
+【完整展开格式】
+============================================================
+
+Given the following database schema and question, generate the SQL query that answers the question.
+ 
+Guidelines:
+- Read the schema carefully to understand available tables and columns
+- Identify which tables and columns are relevant to the question
+- Determine if JOINs are needed (when accessing columns from multiple tables)
+- Translate question constraints into WHERE conditions
+- Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals
+- Use ORDER BY for sorting requests
+- Use LIMIT for "top N" or "first N" requests
+
+[SCHEMA]
+[TABLES]
+Manila:
+ District (PK)
+ s Barangay
+ Population (2010 census)
+ Area ( has .)
+ Pop. density (per km2)
+
+[QUESTION]
+What is the total of Barangay with an area larger than 865.13?
+
+
+============================================================
+【如果启用了 Schema Linking，会包含额外部分】
+============================================================
+
+Given the following database schema and question, generate the SQL query that answers the question.
+ 
+Guidelines:
+- Read the schema carefully to understand available tables and columns
+- Identify which tables and columns are relevant to the question
+- Determine if JOINs are needed (when accessing columns from multiple tables)
+- Translate question constraints into WHERE conditions
+- Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals
+- Use ORDER BY for sorting requests
+- Use LIMIT for "top N" or "first N" requests
+
+[SCHEMA]
+[TABLES]
+Manila:
+ District (PK)
+ s Barangay
+ Population (2010 census)
+ Area ( has .)
+ Pop. density (per km2)
+
+[SCHEMA LINKS]
+Question word "Barangay" → column: Manila.s Barangay (confidence: 1.00)
+Question word "area" → column: Manila.Area (confidence: 1.00)
+Question word "865.13" → (skipped - pure number, too ambiguous)
+
+[QUESTION]
+What is the total of Barangay with an area larger than 865.13?
+
+
+============================================================
+【完整的训练样本 JSON 格式】
+============================================================
+
+{
+  "input": "Given the following database schema and question, generate the SQL query that answers the question.\n \nGuidelines:\n- Read the schema carefully to understand available tables and columns\n- Identify which tables and columns are relevant to the question\n- Determine if JOINs are needed (when accessing columns from multiple tables)\n- Translate question constraints into WHERE conditions\n- Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals\n- Use ORDER BY for sorting requests\n- Use LIMIT for \"top N\" or \"first N\" requests\n[SCHEMA]\n[TABLES]\nManila:\n District (PK)\n s Barangay\n Population (2010 census)\n Area ( has .)\n Pop. density (per km2)\n\n[QUESTION]\nWhat is the total of Barangay with an area larger than 865.13?",
+  
+  "output": "[SQL]\nSELECT COUNT(s Barangay) FROM Manila WHERE Area > 865.13",
+  
+  "schema": "[TABLES]\nManila:\n District (PK)\n s Barangay\n Population (2010 census)\n Area ( has .)\n Pop. density (per km2)",
+  
+  "question": "What is the total of Barangay with an area larger than 865.13?",
+  
+  "sql": "SELECT COUNT(s Barangay) FROM Manila WHERE Area > 865.13",
+  
+  "dataset": "spider",
+  "db_id": "manila",
+  "num_tables": 1,
+  "has_join": false
+}
+
+
+============================================================
+【训练时实际使用的 Prompt 格式（ChatML）】
+============================================================
+
+<|im_start|>system
+You are a SQL expert. Given a database schema and a natural language question, generate the correct SQL query. Output only the SQL query.<|im_end|>
+<|im_start|>user
+Given the following database schema and question, generate the SQL query that answers the question.
+ 
+Guidelines:
+- Read the schema carefully to understand available tables and columns
+- Identify which tables and columns are relevant to the question
+- Determine if JOINs are needed (when accessing columns from multiple tables)
+- Translate question constraints into WHERE conditions
+- Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals
+- Use ORDER BY for sorting requests
+- Use LIMIT for "top N" or "first N" requests
+
+[SCHEMA]
+[TABLES]
+Manila:
+ District (PK)
+ s Barangay
+ Population (2010 census)
+ Area ( has .)
+ Pop. density (per km2)
+
+[QUESTION]
+What is the total of Barangay with an area larger than 865.13?<|im_end|>
+<|im_start|>assistant
+SELECT COUNT(s Barangay) FROM Manila WHERE Area > 865.13<|im_end|>
+
+
+============================================================
+【关键点说明】
+============================================================
+
+1. **Instruction 部分**：
+   - 告诉模型要做什么（生成 SQL 查询）
+   - 提供详细的指南（Guidelines）
+
+2. **Schema 部分**：
+   - 使用 [SCHEMA] 标签
+   - 包含数据库表结构信息
+   - 格式：表名、列名、主键等
+
+3. **Question 部分**：
+   - 使用 [QUESTION] 标签
+   - 自然语言问题
+
+4. **Schema Linking（如果启用）**：
+   - 在 [SCHEMA] 和 [QUESTION] 之间
+   - 显示问题中的词如何映射到 schema 元素
+   - 纯数字（如 865.13）会被跳过，避免歧义
+
+5. **输出格式**：
+   - 训练时：`[SQL]\nSELECT ...`
+   - 推理时：模型会生成 `SELECT ...`（不带 [SQL] 标签）
+
+6. **问题分析**：
+   - "total of Barangay" → 需要 COUNT 聚合
+   - "area larger than 865.13" → WHERE Area > 865.13
+   - 单表查询，不需要 JOIN
+
