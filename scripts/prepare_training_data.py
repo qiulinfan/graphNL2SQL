@@ -343,7 +343,9 @@ def process_sql_create_context(
     linearization_style: str = "basic",
     max_examples: int = None,
     include_semantic_links: bool = False,
-    semantic_threshold: float = 0.7
+    semantic_threshold: float = 0.7,
+    include_schema_linking: bool = False,
+    prompt_style: str = "detailed",
 ) -> list[dict]:
     """
     Process sql-create-context dataset from HuggingFace.
@@ -406,7 +408,10 @@ def process_sql_create_context(
             question=question,
             schema_text=schema_text,
             sql=sql,
-            include_instruction=True
+            include_instruction=True,
+            schema_graph=graph,
+            include_schema_linking=include_schema_linking,
+            prompt_style=prompt_style,
         )
 
         # Add metadata
@@ -438,7 +443,9 @@ def process_gretelai(
     max_examples: int = None,
     include_semantic_links: bool = False,
     semantic_threshold: float = 0.7,
-    complexity_filter: list[str] = None
+    complexity_filter: list[str] = None,
+    include_schema_linking: bool = False,
+    prompt_style: str = "detailed",
 ) -> list[dict]:
     """
     Process gretelai/synthetic_text_to_sql dataset.
@@ -507,7 +514,10 @@ def process_gretelai(
             question=question,
             schema_text=schema_text,
             sql=sql,
-            include_instruction=True
+            include_instruction=True,
+            schema_graph=graph,
+            include_schema_linking=include_schema_linking,
+            prompt_style=prompt_style,
         )
 
         # Add metadata
@@ -539,7 +549,9 @@ def process_nstext2sql(
     linearization_style: str = "basic",
     max_examples: int = None,
     include_semantic_links: bool = False,
-    semantic_threshold: float = 0.7
+    semantic_threshold: float = 0.7,
+    include_schema_linking: bool = False,
+    prompt_style: str = "detailed",
 ) -> list[dict]:
     """
     Process NumbersStation/NSText2SQL dataset.
@@ -619,7 +631,10 @@ def process_nstext2sql(
             question=question,
             schema_text=schema_text,
             sql=sql,
-            include_instruction=True
+            include_instruction=True,
+            schema_graph=graph,
+            include_schema_linking=include_schema_linking,
+            prompt_style=prompt_style,
         )
 
         # Add metadata
@@ -958,11 +973,15 @@ def prepare_all_data(
         try:
             sql_context_train = process_sql_create_context(
                 "train", linearization_style, max_examples,
-                include_semantic_links, semantic_threshold
+                include_semantic_links, semantic_threshold,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
             sql_context_dev = process_sql_create_context(
                 "dev", linearization_style, max_examples,
-                include_semantic_links, semantic_threshold
+                include_semantic_links, semantic_threshold,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
 
             all_train_examples.extend(sql_context_train)
@@ -979,11 +998,15 @@ def prepare_all_data(
         try:
             gretelai_train = process_gretelai(
                 "train", linearization_style, max_examples,
-                include_semantic_links, semantic_threshold
+                include_semantic_links, semantic_threshold,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
             gretelai_dev = process_gretelai(
                 "dev", linearization_style, max_examples,
-                include_semantic_links, semantic_threshold
+                include_semantic_links, semantic_threshold,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
 
             all_train_examples.extend(gretelai_train)
@@ -1000,11 +1023,15 @@ def prepare_all_data(
         try:
             nstext2sql_train = process_nstext2sql(
                 "train", linearization_style, max_examples,
-                include_semantic_links, semantic_threshold
+                include_semantic_links, semantic_threshold,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
             nstext2sql_dev = process_nstext2sql(
                 "dev", linearization_style, max_examples,
-                include_semantic_links, semantic_threshold
+                include_semantic_links, semantic_threshold,
+                include_schema_linking=include_schema_linking,
+                prompt_style=prompt_style,
             )
 
             all_train_examples.extend(nstext2sql_train)
