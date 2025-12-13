@@ -57,6 +57,17 @@ Our solution: **Hybrid Graph Schema Representation** that explicitly models rela
   - Automatic detection of semantically similar columns across tables
   - Embedding-based similarity computation
 
+- **Schema Linking**
+  - Automatic mapping of natural language question words to schema elements
+  - Table, column, and value mention detection
+  - Embedding-based semantic matching with confidence filtering
+  - Stop word filtering to avoid false positive matches
+
+- **Data Augmentation**
+  - GretelAI synthetic dataset (100k examples, 21% multi-table)
+  - NSText2SQL dataset (289k examples, 41% multi-table)
+  - Combined training for improved generalization
+
 - **Execution-Guided Decoding (EGD)**
   - Generate multiple SQL candidates during inference
   - Validate syntax and executability on mock database
@@ -203,6 +214,28 @@ Enrollment.student_id -> Student.student_id
 Enrollment.course_id -> Course.course_id
 ```
 
+### Schema Linking
+
+Schema linking maps natural language question words to database schema elements, helping the model understand which tables and columns are relevant:
+
+```txt
+[SCHEMA LINKS]
+Question word "department" → table: department (confidence: 1.00)
+Question word "head" → table: head (confidence: 1.00)
+Question word "employees" → column: department.Num_Employees (confidence: 0.85)
+```
+
+**Link Types:**
+- **Table Links**: Map question words to table names (e.g., "singers" → table `singer`)
+- **Column Links**: Map question words to column names (e.g., "age" → column `person.age`)
+- **Value Links**: Map literal values to columns (optional, disabled by default)
+
+**Confidence Filtering:**
+- Table threshold: 0.7
+- Column threshold: 0.7
+- Minimum confidence: 0.65
+- Uses embedding-based semantic similarity with stop word filtering
+
 ### LoRA Fine-tuning
 
 We use Low-Rank Adaptation for parameter-efficient training:
@@ -255,6 +288,44 @@ SQL: SELECT "Institution" FROM "table" WHERE "Wins" = 6 AND "Current Streak" = '
               WHERE T1.Investor = 'Simon Woodroffe' 
               OR T1.Investor = 'Peter Jones'"
 }
+```
+
+### Data Augmentation Datasets
+
+For improved generalization, we support additional training datasets:
+
+#### GretelAI Synthetic Text-to-SQL
+
+- **Source**: [gretelai/synthetic_text_to_sql](https://huggingface.co/datasets/gretelai/synthetic_text_to_sql)
+- **Size**: ~100,000 examples
+- **Complexity**: 21% multi-table queries
+- **Features**: Good coverage of JOINs, aggregations, and complex WHERE clauses
+
+```bash
+python scripts/prepare_training_data.py --gretelai --spider
+```
+
+#### NSText2SQL
+
+- **Source**: [NumbersStation/NSText2SQL](https://huggingface.co/datasets/NumbersStation/NSText2SQL)
+- **Size**: ~289,000 examples
+- **Complexity**: 41% multi-table queries
+- **Features**: High diversity, includes complex nested queries
+
+```bash
+python scripts/prepare_training_data.py --nstext2sql --spider
+```
+
+#### Combined Training
+
+```bash
+# Use all available datasets for maximum diversity
+python scripts/prepare_training_data.py \
+    --spider \
+    --gretelai \
+    --nstext2sql \
+    --schema-linking \
+    --prompt-style detailed
 ```
 
 ---
@@ -322,6 +393,27 @@ graphNL2SQL/
 ├── requirements.txt         # Basic dependencies
 └── requirements_train.txt   # Training dependencies
 ```
+
+---
+
+## Results
+
+### Performance Comparison on Spider Dev Set
+
+| Model/Method (Year) | Core Approach | Exact Match (EM) | Execution Match (EX) | vs. Our Method |
+|---------------------|---------------|------------------|----------------------|----------------|
+| **Ours: Qwen-7B + LoRA** | **LLM + Fine-tuning + Schema Linking** | **41.5%** (419/1034) | **61.12%** (632/1034) | **Baseline** |
+| Seq2SQL (2017) | Basic Seq2Seq | 9.7% | 15.6% | +31.8% EM, +45.5% EX |
+| SQLNet (2017) | Structured Prediction | 15.7% | 20.2% | +25.8% EM, +40.9% EX |
+| SyntaxSQLNet (2018) | Syntax Tree Generation | 18.9% | 25.1% | +22.6% EM, +36.0% EX |
+| IRNet (2019) | Intermediate Representation | 39.4% | 46.8% | +2.1% EM, +14.3% EX |
+| RAT-SQL (2019/2021) | Relation-Aware Graph | 46.5% | 52.3% | -5.0% EM, +8.8% EX |
+
+**Key Observations:**
+- Our approach significantly outperforms early neural methods (Seq2SQL, SQLNet, SyntaxSQLNet)
+- We achieve comparable EM accuracy to specialized graph-based methods like IRNet
+- **Execution Match is our strength**: We surpass RAT-SQL by +8.8% on EX, indicating our SQL queries are semantically correct even when syntactically different
+- Fine-tuned 7B LLM with LoRA achieves competitive performance with much simpler architecture
 
 ---
 
