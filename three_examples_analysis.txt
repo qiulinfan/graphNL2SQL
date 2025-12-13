@@ -1,0 +1,105 @@
+============================================================
+三个数据样本分析
+============================================================
+
+【样本 1】问题: "How many heads of the departments are older than 56?"
+
+当前 Schema Links:
+- ✅ Question word "department" → table: department (confidence: 1.00) ✓
+- ✅ Question word "head" → table: head (confidence: 1.00) ✓
+- ⚠️ Question word "department" → column: department.Department_ID (confidence: 0.70) - 应该被过滤（< 0.65）
+- ⚠️ Question word "head" → column: head.head_ID (confidence: 0.70) - 应该被过滤（< 0.65）
+- ⚠️ Question word "department" → column: management.department_ID (confidence: 0.70) - 应该被过滤（< 0.65）
+- ⚠️ Question word "head" → column: management.head_ID (confidence: 0.70) - 应该被过滤（< 0.65）
+- ❌ Question word "How" → column: department.Name (value, confidence: 0.80) - 错误！应该被停用词过滤
+- ❌ Question word "How" → column: head.name (value, confidence: 0.80) - 错误！应该被停用词过滤
+
+问题：
+1. "How" 仍然被链接（已修复：添加了停用词过滤）
+2. confidence 0.70 的链接通过了（但我们的 min_confidence 是 0.65，所以 0.70 应该通过）
+
+修复后应该只包含：
+- Question word "department" → table: department (confidence: 1.00)
+- Question word "head" → table: head (confidence: 1.00)
+- Question word "older" → column: head.age (confidence: 可能 0.7+，如果匹配到)
+
+
+============================================================
+【样本 2】问题: "List the name, born state and age of the heads of departments ordered by age."
+
+当前 Schema Links:
+- ✅ Question word "department" → table: department (confidence: 1.00) ✓
+- ✅ Question word "head" → table: head (confidence: 1.00) ✓
+- ✅ Question word "name" → column: department.Name (confidence: 1.00) ✓
+- ✅ Question word "name" → column: head.name (confidence: 1.00) ✓
+- ✅ Question word "age" → column: head.age (confidence: 1.00) ✓
+- ⚠️ Question word "department" → column: department.Department_ID (confidence: 0.70) - 应该被过滤（< 0.65？不对，0.70 > 0.65，应该保留）
+- ⚠️ Question word "head" → column: head.head_ID (confidence: 0.70) - 应该保留（0.70 > 0.65）
+- ✅ Question word "born" → column: head.born_state (confidence: 0.70) ✓
+- ✅ Question word "state" → column: head.born_state (confidence: 0.70) ✓
+- ⚠️ Question word "department" → column: management.department_ID (confidence: 0.70) - 应该保留
+- ⚠️ Question word "head" → column: management.head_ID (confidence: 0.70) - 应该保留
+- ❌ Question word "List" → column: department.Name (value, confidence: 0.80) - 错误！应该被停用词过滤
+- ❌ Question word "List" → column: head.name (value, confidence: 0.80) - 错误！应该被停用词过滤
+
+问题：
+1. "List" 仍然被链接（已修复：添加了停用词过滤）
+2. confidence 0.70 的链接应该保留（因为 0.70 > 0.65）
+
+修复后应该包含：
+- Question word "department" → table: department (confidence: 1.00)
+- Question word "head" → table: head (confidence: 1.00)
+- Question word "name" → column: department.Name (confidence: 1.00)
+- Question word "name" → column: head.name (confidence: 1.00)
+- Question word "age" → column: head.age (confidence: 1.00)
+- Question word "born" → column: head.born_state (confidence: 0.70)
+- Question word "state" → column: head.born_state (confidence: 0.70)
+- Question word "department" → column: department.Department_ID (confidence: 0.70)
+- Question word "head" → column: head.head_ID (confidence: 0.70)
+- Question word "department" → column: management.department_ID (confidence: 0.70)
+- Question word "head" → column: management.head_ID (confidence: 0.70)
+
+
+============================================================
+【样本 3】问题: "List the creation year, name and budget of each department."
+
+当前 Schema Links:
+- ✅ Question word "department" → table: department (confidence: 1.00) ✓
+- ✅ Question word "name" → column: department.Name (confidence: 1.00) ✓
+- ✅ Question word "creation" → column: department.Creation (confidence: 1.00) ✓
+- ⚠️ Question word "department" → column: department.Department_ID (confidence: 0.70) - 应该保留
+- ⚠️ Question word "budget" → column: department.Budget_in_Billions (confidence: 0.70) - 应该保留
+- ⚠️ Question word "department" → column: management.department_ID (confidence: 0.70) - 应该保留
+- ❌ Question word "List" → column: department.Name (value, confidence: 0.80) - 错误！应该被停用词过滤
+- ❌ Question word "List" → column: head.name (value, confidence: 0.80) - 错误！应该被停用词过滤
+
+问题：
+1. "List" 仍然被链接（已修复：添加了停用词过滤）
+
+修复后应该包含：
+- Question word "department" → table: department (confidence: 1.00)
+- Question word "name" → column: department.Name (confidence: 1.00)
+- Question word "creation" → column: department.Creation (confidence: 1.00)
+- Question word "budget" → column: department.Budget_in_Billions (confidence: 0.70)
+- Question word "department" → column: department.Department_ID (confidence: 0.70)
+- Question word "department" → column: management.department_ID (confidence: 0.70)
+
+
+============================================================
+总结
+============================================================
+
+✅ 已修复的问题：
+1. "How" 和 "List" 等停用词现在会被过滤掉（在 extract_value_mentions 中添加了停用词检查）
+
+⚠️ 需要注意：
+1. confidence 0.70 的链接会保留（因为 0.70 > 0.65）
+2. 如果希望更严格，可以将 min_confidence 提高到 0.75，这样 0.70 的链接也会被过滤
+
+💡 建议：
+- 当前设置（min_confidence=0.65）会保留：
+  - 所有精确匹配（1.0）
+  - 所有子串匹配（0.8）
+  - 中等置信度的 embedding 匹配（0.7）
+- 如果希望只保留高置信度链接，可以提高到 0.75 或 0.8
+

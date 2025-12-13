@@ -298,6 +298,22 @@ def extract_value_mentions(
     Note: Pure numbers are NOT linked as they may match multiple columns.
     Only values with clear semantic context are linked.
     """
+    # Common question words and stop words that should NOT be linked to schema elements
+    STOP_WORDS = {
+        'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whom', 'whose',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+        'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+        'can', 'the', 'a', 'an', 'and', 'or', 'but', 'if', 'of', 'to', 'for',
+        'with', 'from', 'by', 'in', 'on', 'at', 'as', 'than', 'that', 'this',
+        'these', 'those', 'many', 'much', 'more', 'most', 'some', 'any', 'all',
+        'each', 'every', 'few', 'several', 'other', 'another', 'such', 'same',
+        'different', 'old', 'new', 'first', 'last', 'next', 'previous', 'total',
+        'number', 'count', 'sum', 'average', 'avg', 'maximum', 'max', 'minimum',
+        'min', 'top', 'bottom', 'highest', 'lowest', 'largest', 'smallest',
+        'greater', 'less', 'equal', 'older', 'younger', 'than', 'show', 'list',
+        'find', 'get', 'return', 'give', 'tell', 'display', 'present'
+    }
+    
     links = []
     question_lower = question.lower()
     
@@ -309,8 +325,10 @@ def extract_value_mentions(
     # Quoted strings
     quoted = re.findall(r'"([^"]+)"|\'([^\']+)\'', question)
     quoted = [q[0] or q[1] for q in quoted]
-    # Capitalized words (likely proper nouns)
+    # Capitalized words (likely proper nouns) - but filter out stop words
     capitalized = re.findall(r'\b[A-Z][a-z]+\b', question)
+    # Filter out stop words from capitalized words
+    capitalized = [w for w in capitalized if w.lower() not in STOP_WORDS]
     
     all_values = quoted + capitalized
     
@@ -367,7 +385,7 @@ def perform_schema_linking(
     graph,
     include_tables: bool = True,
     include_columns: bool = True,
-    include_values: bool = True,
+    include_values: bool = False,  # Disabled by default - value linking is error-prone
     table_threshold: float = 0.7,
     column_threshold: float = 0.7,
     value_threshold: float = 0.6,
@@ -410,14 +428,22 @@ def perform_schema_linking(
         value_links = extract_value_mentions(question, graph, value_threshold)
         all_links.extend(value_links)
     
-    # Remove duplicates (same span and schema element)
-    seen = set()
-    unique_links = []
+    # Remove duplicates: for each question word (span), keep only the best link
+    # This prevents the same word from appearing multiple times with different schema elements
+    from collections import defaultdict
+    
+    # Group by span (question word position) - same word can only have one best link
+    span_groups = defaultdict(list)
     for link in all_links:
-        key = (link.span, link.schema_element, link.link_type)
-        if key not in seen:
-            seen.add(key)
-            unique_links.append(link)
+        span_groups[link.span].append(link)
+    
+    # For each question word, keep only the highest confidence link
+    # This ensures each word appears only once in the final output
+    unique_links = []
+    for span, links in span_groups.items():
+        # Keep only the highest confidence link for this question word
+        best_link = max(links, key=lambda x: x.confidence)
+        unique_links.append(best_link)
     
     # Apply final confidence filter if specified
     if min_confidence is None:
