@@ -110,6 +110,12 @@ class TrainingConfig:
     # 验证频率（以 epoch 的分数表示，例如 0.1 = 每 0.1 个 epoch）
     eval_every_epoch_fraction: float = 0.1
     
+    # Save frequency (as fraction of epoch, e.g., 0.25 = every 0.25 epoch)
+    # 保存频率（以 epoch 的分数表示，例如 0.25 = 每 0.25 个 epoch）
+    # Only used when eval_every_epoch_fraction < 1.0 (steps-based strategy)
+    # 仅在 eval_every_epoch_fraction < 1.0 时使用（基于 steps 的策略）
+    save_every_epoch_fraction: float = 0.5
+    
     # WandB
     use_wandb: bool = True
     wandb_project: str = "nl2sql-finetuning"
@@ -176,6 +182,8 @@ def load_config_from_json(config_path: str = "config.json") -> TrainingConfig:
         load_best_model_at_end=data.get("training", {}).get("load_best_model_at_end", False),
         # Evaluation frequency
         eval_every_epoch_fraction=data.get("training", {}).get("eval_every_epoch_fraction", 0.1),
+        # Save frequency
+        save_every_epoch_fraction=data.get("training", {}).get("save_every_epoch_fraction", 0.5),
     )
 
 
@@ -214,6 +222,7 @@ def save_config_to_json(config: TrainingConfig, config_path: str = "config.json"
             "use_fp16": config.use_fp16,
             "load_best_model_at_end": config.load_best_model_at_end,
             "eval_every_epoch_fraction": config.eval_every_epoch_fraction,
+            "save_every_epoch_fraction": config.save_every_epoch_fraction,
         },
         "data": {
             "data_dir": config.data_dir,
@@ -860,9 +869,10 @@ def train_phase1_wikisql(
         
         # Save checkpoint: ensure save_steps is a multiple of eval_steps
         # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
-        # Target: save every ~0.5 epoch, but must be multiple of eval_steps
-        # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
-        target_save_steps = max(1, int(steps_per_epoch * 0.5))
+        # Use configurable save frequency (default 0.5 epoch)
+        # 使用可配置的保存频率（默认 0.5 epoch）
+        save_fraction = getattr(config, 'save_every_epoch_fraction', 0.5)
+        target_save_steps = max(1, int(steps_per_epoch * save_fraction))
         # Round up to nearest multiple of eval_steps
         # 向上取整到最近的 eval_steps 倍数
         save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps
@@ -1010,9 +1020,10 @@ def train_phase2_spider(
         
         # Save checkpoint: ensure save_steps is a multiple of eval_steps
         # 保存 checkpoint：确保 save_steps 是 eval_steps 的整数倍
-        # Target: save every ~0.5 epoch, but must be multiple of eval_steps
-        # 目标：每 ~0.5 epoch 保存一次，但必须是 eval_steps 的倍数
-        target_save_steps = max(1, int(steps_per_epoch * 0.5))
+        # Use configurable save frequency (default 0.5 epoch)
+        # 使用可配置的保存频率（默认 0.5 epoch）
+        save_fraction = getattr(config, 'save_every_epoch_fraction', 0.5)
+        target_save_steps = max(1, int(steps_per_epoch * save_fraction))
         # Round up to nearest multiple of eval_steps
         # 向上取整到最近的 eval_steps 倍数
         save_steps = ((target_save_steps + eval_steps - 1) // eval_steps) * eval_steps

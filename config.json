@@ -7,7 +7,7 @@
   "lora": {
     "r": 16,
     "alpha": 32,
-    "dropout": 0.15,
+    "dropout": 0.2,
     "target_modules": [
       "q_proj",
       "k_proj",
@@ -20,13 +20,16 @@
   },
   "training": {
     "wikisql_epochs": 0.5,
-    "spider_epochs": 2,
+    "spider_epochs": 1.5,
     "batch_size": 1,
     "gradient_accumulation": 16,
-    "learning_rate": 5e-05,
+    "learning_rate": 3e-05,
     "lr_scheduler": "cosine",
     "warmup_ratio": 0.1,
-    "weight_decay": 0.05,
+    "weight_decay": 0.08,
+    "load_best_model_at_end": true,
+    "eval_every_epoch_fraction": 0.2,
+    "save_every_epoch_fraction": 0.25,
     "max_seq_length": 2048,
     "gradient_checkpointing": true,
     "use_bf16": true,
