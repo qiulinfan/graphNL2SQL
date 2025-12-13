@@ -345,7 +345,10 @@ def show_sample_examples(
     wikisql_train_data: List[Dict],
     spider_train_data: List[Dict]
 ) -> None:
-    """Display sample examples from datasets."""
+    """
+    Display sample examples from datasets.
+    Shows the full input (including schema linking if present) and output.
+    """
     print("=" * 60)
     print("SAMPLE EXAMPLES")
     print("=" * 60)
@@ -355,20 +358,50 @@ def show_sample_examples(
         example = wikisql_train_data[0]
         print(f"Question: {example.get('question', 'N/A')}")
         print(f"SQL: {example.get('sql', 'N/A')}")
-        print(f"\nSchema preview:")
-        schema = example.get('schema', 'N/A')
-        print(schema[:500] + "..." if len(schema) > 500 else schema)
+        
+        # Show full input (includes schema linking if present)
+        # 显示完整的 input（如果包含 schema linking 也会显示）
+        input_text = example.get('input', '')
+        if input_text:
+            print(f"\nFull Input (with schema linking if enabled):")
+            print("-" * 60)
+            # Show first 800 chars, or full if shorter
+            if len(input_text) > 800:
+                print(input_text[:800] + "\n... (truncated)")
+            else:
+                print(input_text)
+        else:
+            # Fallback to schema only if input not available
+            # 如果没有 input，回退到只显示 schema
+            print(f"\nSchema preview:")
+            schema = example.get('schema', 'N/A')
+            print(schema[:500] + "..." if len(schema) > 500 else schema)
     
     if spider_train_data:
-        print("\n" + "-" * 60)
+        print("\n" + "=" * 60)
         print("\n Spider Example:")
         example = spider_train_data[0]
         print(f"Question: {example.get('question', 'N/A')}")
         print(f"SQL: {example.get('sql', 'N/A')}")
         print(f"Database: {example.get('db_id', 'N/A')}")
-        print(f"\nSchema preview:")
-        schema = example.get('schema', 'N/A')
-        print(schema[:500] + "..." if len(schema) > 500 else schema)
+        
+        # Show full input (includes schema linking if present)
+        # 显示完整的 input（如果包含 schema linking 也会显示）
+        input_text = example.get('input', '')
+        if input_text:
+            print(f"\nFull Input (with schema linking if enabled):")
+            print("-" * 60)
+            # Show first 800 chars, or full if shorter
+            if len(input_text) > 800:
+                print(input_text[:800] + "\n... (truncated)")
+            else:
+                print(input_text)
+        else:
+            # Fallback to schema only if input not available
+            # 如果没有 input，回退到只显示 schema
+            print(f"\nSchema preview:")
+            schema = example.get('schema', 'N/A')
+            print(schema[:500] + "..." if len(schema) > 500 else schema)
 
 
 # =============================================================================
