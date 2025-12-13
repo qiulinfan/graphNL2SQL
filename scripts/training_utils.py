@@ -613,6 +613,9 @@ def init_wandb(config: TrainingConfig) -> str:
     """
     Initialize Weights & Biases logging.
     
+    Automatically logs in using existing account. If no API key is provided
+    within 5 seconds, uses the default API key.
+    
     Args:
         config: Training configuration
         
@@ -626,6 +629,60 @@ def init_wandb(config: TrainingConfig) -> str:
     if not WANDB_AVAILABLE:
         print("Warning: wandb not installed, disabling")
         return "nl2sql_training"
+    
+    # Auto-login with timeout and default API key
+    try:
+        import threading
+        import queue
+        
+        # Default API key
+        DEFAULT_WANDB_API_KEY = "3c756eaec5f0089626339bdc670242e46e8a69ab"
+        
+        # Check if already logged in
+        try:
+            api = wandb.Api()
+            # Try to access user info to check if logged in
+            api.viewer()
+            print(" WandB: Using existing login")
+        except Exception:
+            # Not logged in, need to login
+            print(" WandB: Logging in...")
+            print("  (Will use default API key if no input within 5 seconds)")
+            
+            # Use threading to implement timeout for input
+            api_key_queue = queue.Queue()
+            api_key = None
+            
+            def get_input():
+                try:
+                    key = input("Enter WandB API key (or press Enter for default): ").strip()
+                    api_key_queue.put(key if key else None)
+                except (EOFError, KeyboardInterrupt):
+                    api_key_queue.put(None)
+            
+            # Start input thread
+            input_thread = threading.Thread(target=get_input, daemon=True)
+            input_thread.start()
+            input_thread.join(timeout=5.0)  # Wait max 5 seconds
+            
+            # Get API key from queue (or None if timeout)
+            try:
+                api_key = api_key_queue.get_nowait()
+            except queue.Empty:
+                api_key = None
+            
+            # Use default API key if timeout or empty input
+            if not api_key:
+                api_key = DEFAULT_WANDB_API_KEY
+                print(f"  Using default API key")
+            
+            # Login with relogin=True to use existing account
+            wandb.login(key=api_key, relogin=True)
+            print(" WandB: Logged in successfully")
+            
+    except Exception as e:
+        print(f" Warning: WandB login failed: {e}")
+        print("  Continuing without WandB login (may prompt during wandb.init)")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = config.wandb_run_name or f"nl2sql_{timestamp}"
