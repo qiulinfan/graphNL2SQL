@@ -219,23 +219,28 @@ def extract_value_mentions(
     Identify values in the question and map them to likely columns.
     
     Examples:
-    - "25 years old" → age column
+    - "25 years old" → age column (context-based)
     - "John" → name column
-    - "2020" → year/date column
+    - "2020" → year/date column (if context suggests year)
+    
+    Note: Pure numbers are NOT linked as they may match multiple columns.
+    Only values with clear semantic context are linked.
     """
     links = []
     question_lower = question.lower()
     
-    # Extract potential values (numbers, quoted strings, capitalized words)
+    # Extract potential values (quoted strings, capitalized words)
+    # Skip pure numbers - they may match multiple columns and are ambiguous
     # Numbers
-    numbers = re.findall(r'\b\d+\b', question)
+    # numbers = re.findall(r'\b\d+\b', question)  # Disabled: too ambiguous
+    
     # Quoted strings
     quoted = re.findall(r'"([^"]+)"|\'([^\']+)\'', question)
     quoted = [q[0] or q[1] for q in quoted]
     # Capitalized words (likely proper nouns)
     capitalized = re.findall(r'\b[A-Z][a-z]+\b', question)
     
-    all_values = numbers + quoted + capitalized
+    all_values = quoted + capitalized
     
     # Get all columns with their types
     columns = []
@@ -246,27 +251,26 @@ def extract_value_mentions(
     if not columns or not all_values:
         return links
     
-    # Match values to columns based on type and name
+    # Match values to columns based on context and name
+    # Only link values with clear semantic meaning (not pure numbers)
     for value in all_values:
         value_lower = value.lower()
+        
+        # Skip pure numbers - they're too ambiguous and may match multiple columns
+        if value.isdigit():
+            continue
         
         # Try to match to columns
         for table_name, col_name, dtype in columns:
             col_lower = col_name.lower()
             confidence = 0.0
             
-            # Type-based matching
-            if dtype == "number" and value.isdigit():
-                confidence = 0.6
-            elif dtype == "text" and not value.isdigit():
+            # Type-based matching (only for non-numeric values)
+            if dtype == "text" and not value.isdigit():
                 confidence = 0.5
             
-            # Name-based matching (e.g., "age" column for "25 years old")
-            if "age" in col_lower and ("year" in value_lower or "old" in value_lower):
-                confidence = 0.9
-            elif "name" in col_lower and value[0].isupper():
-                confidence = 0.8
-            elif "year" in col_lower and value.isdigit() and len(value) == 4:
+            # Name-based matching (e.g., "name" column for capitalized words)
+            if "name" in col_lower and value[0].isupper():
                 confidence = 0.8
             elif "date" in col_lower and ("/" in value or "-" in value):
                 confidence = 0.7

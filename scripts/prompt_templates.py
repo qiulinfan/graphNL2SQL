@@ -41,8 +41,6 @@ Key Requirements:
 - Generate valid SQL syntax that executes without errors
 - Use correct table and column names from the provided schema
 - Handle JOINs correctly when multiple tables are involved
-- **Use table aliases for JOINs** (e.g., `FROM table1 AS t1 JOIN table2 AS t2`)
-- **Always qualify column names with table names/aliases** (e.g., `t1.column_name` instead of just `column_name`)
 - Apply appropriate WHERE conditions based on the question
 - Use correct aggregation functions (COUNT, SUM, AVG, MAX, MIN) when needed
 - Include ORDER BY when sorting is requested
@@ -62,8 +60,8 @@ Core Principles:
    - Use INNER JOIN for required relationships
    - Use LEFT JOIN when all records from one table are needed
    - Match foreign keys correctly
-   - **Always use table aliases** (e.g., `FROM singer AS s JOIN concert AS c`)
-   - **Always qualify column names** with table aliases (e.g., `s.name`, `c.date`)
+   - Consider using table aliases for clarity in multi-table queries
+   - Qualify column names with table names/aliases when there might be ambiguity
 4. **Condition Logic**:
    - Translate question constraints to WHERE clauses accurately
    - Handle date/number comparisons correctly
@@ -80,9 +78,8 @@ Core Principles:
 Common Pitfalls to Avoid:
 - Don't use columns that don't exist in the schema
 - Don't forget to join tables when accessing columns from multiple tables
-- Don't mix up table aliases
-- Don't use unqualified column names in multi-table queries (always use `table.column` or `alias.column`)
-- Don't forget to define table aliases when using JOINs
+- Don't mix up table aliases if you use them
+- Be careful with unqualified column names in multi-table queries (consider qualifying them to avoid ambiguity)
 - Don't use incorrect aggregation syntax
 - Don't forget WHERE conditions mentioned in the question
 
@@ -134,15 +131,10 @@ Guidelines:
 - Read the schema carefully to understand available tables and columns
 - Identify which tables and columns are relevant to the question
 - Determine if JOINs are needed (when accessing columns from multiple tables)
-- **When using JOINs:**
-  - Always define table aliases (e.g., `FROM singer AS s`)
-  - Always qualify column names with aliases (e.g., `s.name`, `s.age`)
-  - This prevents ambiguity and improves query clarity
 - Translate question constraints into WHERE conditions
 - Apply aggregations (COUNT, SUM, etc.) when the question asks for counts or totals
 - Use ORDER BY for sorting requests
-- Use LIMIT for "top N" or "first N" requests
-- Ensure all column and table names match the schema exactly"""
+- Use LIMIT for "top N" or "first N" requests"""
     
     return base_instruction + guidelines
 

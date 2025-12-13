@@ -685,6 +685,7 @@ def process_spider(
     include_semantic_links: bool = False,
     semantic_threshold: float = 0.7,
     include_schema_linking: bool = False,
+    prompt_style: str = "detailed",
 ) -> list[dict]:
     """
     Process Spider dataset into training examples.
@@ -738,7 +739,10 @@ def process_spider(
             question=question,
             schema_text=schema_text,
             sql=sql,
-            include_instruction=True
+            include_instruction=True,
+            schema_graph=graph,
+            include_schema_linking=include_schema_linking,
+            prompt_style=prompt_style,
         )
 
         # Add metadata
@@ -863,7 +867,9 @@ def prepare_all_data(
     include_semantic_links: bool = False,
     semantic_threshold: float = 0.7,
     wikisql_balanced: int = None,
-    skip_wikisql: bool = False
+    skip_wikisql: bool = False,
+    include_schema_linking: bool = False,
+    prompt_style: str = "detailed",
 ) -> None:
     """
     Main function to prepare all training data.
@@ -920,9 +926,13 @@ def prepare_all_data(
     if use_spider:
         try:
             spider_train = process_spider("train", linearization_style, max_examples,
-                                          include_semantic_links, semantic_threshold)
+                                          include_semantic_links, semantic_threshold,
+                                          include_schema_linking=include_schema_linking,
+                                          prompt_style=prompt_style)
             spider_dev = process_spider("dev", linearization_style, max_examples,
-                                        include_semantic_links, semantic_threshold)
+                                        include_semantic_links, semantic_threshold,
+                                        include_schema_linking=include_schema_linking,
+                                        prompt_style=prompt_style)
 
             all_train_examples.extend(spider_train)
             all_dev_examples.extend(spider_dev)
@@ -1165,6 +1175,18 @@ Examples:
         default=0.7,
         help="Cosine similarity threshold for semantic links (default: 0.7)"
     )
+    # Schema linking
+    parser.add_argument(
+        "--schema-linking",
+        action="store_true",
+        help="Enable schema linking (maps question words to schema elements)"
+    )
+    parser.add_argument(
+        "--prompt-style",
+        choices=["simple", "detailed", "expert", "few_shot"],
+        default="detailed",
+        help="Prompt style: simple, detailed (default), expert, or few_shot"
+    )
 
     args = parser.parse_args()
 
@@ -1181,7 +1203,9 @@ Examples:
         include_semantic_links=args.semantic,
         semantic_threshold=args.semantic_threshold,
         wikisql_balanced=args.wikisql_balanced,
-        skip_wikisql=args.skip_wikisql
+        skip_wikisql=args.skip_wikisql,
+        include_schema_linking=args.schema_linking,
+        prompt_style=args.prompt_style,
     )
 
 

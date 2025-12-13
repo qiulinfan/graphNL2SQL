@@ -78,6 +78,7 @@ class TrainingConfig:
     learning_rate: float = 2e-4
     lr_scheduler: str = "cosine"
     warmup_ratio: float = 0.05
+    weight_decay: float = 0.01  # L2 regularization coefficient
     max_seq_length: int = 1024
     gradient_checkpointing: bool = True
     
@@ -206,6 +207,7 @@ def save_config_to_json(config: TrainingConfig, config_path: str = "config.json"
             "learning_rate": config.learning_rate,
             "lr_scheduler": config.lr_scheduler,
             "warmup_ratio": config.warmup_ratio,
+            "weight_decay": config.weight_decay,
             "max_seq_length": config.max_seq_length,
             "gradient_checkpointing": config.gradient_checkpointing,
             "use_bf16": config.use_bf16,
@@ -248,7 +250,7 @@ def print_config(config: TrainingConfig) -> None:
     print(f"  Target modules: {config.lora_target_modules}")
     print(f"\nTraining:")
     print(f"  Batch size: {config.batch_size} x {config.gradient_accumulation} = {config.batch_size * config.gradient_accumulation} effective")
-    print(f"  Learning rate: {config.learning_rate}, Scheduler: {config.lr_scheduler}")
+    print(f"  Learning rate: {config.learning_rate}, Scheduler: {config.lr_scheduler}, Weight decay: {config.weight_decay}")
     print(f"  Epochs: {config.wikisql_epochs} WikiSQL + {config.spider_epochs} Spider")
     print(f"\nPaths:")
     print(f"  Data: {config.data_dir}")
@@ -765,7 +767,7 @@ def train_phase1_wikisql(
         learning_rate=config.learning_rate,
         lr_scheduler_type=config.lr_scheduler,
         warmup_ratio=config.warmup_ratio,
-        weight_decay=0.01,
+        weight_decay=config.weight_decay,
         logging_steps=10,
         eval_strategy=eval_strategy,
         eval_steps=eval_steps,
@@ -915,7 +917,7 @@ def train_phase2_spider(
         learning_rate=config.learning_rate,
         lr_scheduler_type=config.lr_scheduler,
         warmup_ratio=config.warmup_ratio,
-        weight_decay=0.01,
+        weight_decay=config.weight_decay,
         logging_steps=10,
         eval_strategy=eval_strategy,
         eval_steps=eval_steps,
