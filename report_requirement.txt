@@ -1,0 +1,53 @@
+Abstract
+
+
+Introduction
+
+
+Data
+
+
+Related Work
+
+
+Methods
+
+Evaluation and Results
+(Evaluation and Results ( $\mathbf{6 0}$ points) This section provides an overview of how you evaluated your method on the data. What methods did you compare against? How successful were you? Describe the exact evaluation setup and what kinds of steps were taken. For the final report, you should have evaluated your baselines and your proposed model (described in the Methods section). Remember, your system doesn't have to work well; it just needs to work. If you're having trouble getting some result, consider simplifying your system until you can get something working. Then you can build on top of that working system (if you want) to improve model performance.
+
+For the final project, it's often a nice touch to report on the effects of different parts of your system on performance, e.g,. hyperparameters, features, heuristics. For example, if you're running a classifier and have 100 features that could be grouped into different categories, what's the effect of leaving out certain kinds of features? This is what's known as an ablation study. Similarly, if you have a hyperparameter like vector size, what's the effect of changing this on the final performance (You did this is HW1 when you set the smoothing rates for Naive Bayes!).
+
+You should have at least one figure or table showing your baselines' and model's results. Please make sure to label all your axes and make the font size legible without having to zoom in excessively. You can discuss the figure and/or table next in the Discussion section, as they help the reader understand what the model is doing.)
+
+
+
+
+
+
+
+Discussion
+(The discussion section is where you start to unpack the results for the reader to help them understand what was learned. You can discuss here what has gone wrong and right in your current setup. For example, maybe you realized you needed more data, or maybe you realized that switching to deep learning was not helping your analysis. The discussion should point the way to what work will be done next.
+
+In the final report, you should discuss how well your baselines and model did and what findings you can draw from this. The key part to a discussion is not stating the results (e.g., "the baseline got a 12.0 F1."-this is uninformative; don't write that) but rather trying to explain the results to the reader and help them understand why these results matter and how to interpret and contextualize the result. For example, if your method's performance is low, why is it low? Is there something about the data? Or, if the performance is high, is this expected and why? It's useful to discuss where your model performs well and where it doesn't. If you look at the kinds of mistakes it makes, are there any patterns? What was the effect of changing the model parameters or holding out certain feature?
+
+In the final report, discuss (1) how well your approach did overall-is this performance satisfactory for an end-user of your NLP model? is it enough to do useful science? (2) how well did your approach do with respect to the baseline? Was the performance closer than you expected? What might explain the difference in performance? and (3) Why your approach did well (or badly—it happens). Do not just report numbers-put your numbers in context and discuss why these numbers matter and what the reader should learn from seeing the performance numbers.)
+
+
+
+
+
+
+
+
+Conclusion 
+(Wrap up the main part of your paper here with a conclusion that summarizes what you did and what you think are the main conclusions. This is your chance to remind the reader of what all you have accomplished and re-tell the story of your paper. If you think there are interesting future directions that a reader might pursue, describe them here. If you put your code on github or some other open source repo, link to it here as well. We encourage students to put their project code on github for the broader community and to show potential employers a demonstration of your technical skills.)
+
+
+Other Things We Tried
+(We fully realize that not everything will go according to plan during the projects! That's a part of data science and using (or developing) NLP techniques for real world data. You can use this section to describe things you tried but couldn't get working. If you spent a lot of time on some aspect that's not included in the previous sections, describe it here. This section is here to help convey your effort so you can get credit for being ambitious. Be sure to describe things in detail though (e.g., saying "we spent 30 hours prototyping a deep learning system but it didn't work" doesn't tell us much so it's tough to provide credit for this.)
+
+
+
+
+What You Would Have Done Differently or Next 
+(Projects are fun but can be frustrating since you're working on a problem that doesn't have a fully-specified solution yet. If you had to start the some parts of the project over, what would you have done differently? Are there ideas you would have wanted to try but didn't have time? Did your results point the way to some next step that you think might work? Use this section as an opportunity for reflection on how the project went.)

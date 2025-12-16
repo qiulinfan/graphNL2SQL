@@ -1,0 +1,107 @@
+Final Results:
+  Exact Match (EM):     41.49% (429/1034) 
+  Execution Match (EX): 58.32% (603/1034)
+  Execution Errors:     232 (schema parsing issues)
+
+  EX found 202 additional correct queries beyond EM
+
+================================================================================
+[Step 2] Statistics by Database / 按数据库统计
+================================================================================
+
+Database                              Eval   Train       EM       EX
+--------------------------------------------------------------------------------
+car_1                                   92       0     8.7%    29.3%  
+tvshow                                  62       0    19.3%    35.5% 
+pets_1                                  42       0    23.8%    59.5%    
+world_1                                120       0    31.7%    37.5% 
+student_transcripts_tracking            78       0    32.1%    55.1%  
+dog_kennels                             82       0    32.9%    62.2%
+network_1                               56       0    48.2%    64.3%
+course_teach                            30       0    43.3%    70.0%
+wta_1                                   62       0    50.0%    69.3%  
+battle_death                            16       0    43.8%    75.0%
+voter_1                                 15       0    46.7%    73.3%
+flight_2                                80       0    47.5%    57.5%
+concert_singer                          45       0    48.9%    68.9%
+real_estate_properties                   4       0    50.0%    50.0%
+museum_visit                            18       0    55.6%    55.6%
+employee_hire_evaluation                38       0    60.5%    71.1%
+cre_Doc_Template_Mgt                    84       0    63.1%    77.4%
+poker_player                            40       0    65.0%    87.5%
+orchestra                               40       0    67.5%    70.0%
+singer                                  30       0    76.7%    90.0%
+
+================================================================================
+[Step 3] Statistics by SQL Operation / 按 SQL 操作统计
+================================================================================
+
+Operation                    Count         EM         EX
+------------------------------------------------------------
+has_subquery                   159      18.2%      52.2%  
+has_union                       80      18.8%      50.0%  
+has_join                       408      19.1%      36.5%  
+has_having                      79      25.3%      39.2%  
+has_limit                      189      31.2%      52.4% 
+has_group_by                   277      31.4%      49.5%
+has_aggregation                549      36.8%      54.6%
+has_where                      493      38.5%      48.1%  
+has_order_by                   237      40.3%      60.3%
+has_distinct                    87      44.8%      62.1%
+
+================================================================================
+[Step 4] Statistics by Complexity / 按复杂度统计
+================================================================================
+
+Complexity                             Count         EM         EX
+----------------------------------------------------------------------
+medium (2 tables)                         64      78.1%      89.1% 
+complex (3-4 tables)                     602      47.7%      59.8%
+very_complex (5+ tables or subquery)      368      25.0%      50.5%
+
+================================================================================
+SUMMARY / 总结
+================================================================================
+
+Overall Exact Match (EM):     41.49%
+Overall Execution Match (EX): 58.32%
+Total Samples:                1034
+Total Training Samples:       7000
+
+Worst Performing Databases:
+  - car_1: EM 8.7%, EX 29.3%
+  - tvshow: EM 19.3%, EX 35.5%
+  - pets_1: EM 23.8%, EX 59.5%
+
+Hardest SQL Operations:
+  - has_union: EM 16.2%, EX 50.0% (80 samples)
+  - has_join: EM 18.1%, EX 36.5% (408 samples)
+  - has_subquery: EM 18.2%, EX 52.2% (159 samples)
+============================================================
+CORRECT PREDICTIONS (by EM)
+============================================================
+
+[1] Question: How many singers do we have?
+    SQL: SELECT count(*) FROM singer
+
+[2] Question: What is the total number of singers?
+    SQL: SELECT count(*) FROM singer
+
+[3] Question: Show name, country, age for all singers ordered by age from the oldest to the youngest.
+    SQL: SELECT Name ,  Country ,  Age FROM singer ORDER BY Age DESC
+
+============================================================
+INCORRECT PREDICTIONS (by EM)
+============================================================
+
+[1] Question: Show the name and the release year of the song by the youngest singer.
+    Gold: SELECT song_name ,  song_release_year FROM singer ORDER BY age LIMIT 1
+    Pred: SELECT T1.Name ,  T1.Song_release_year FROM singer AS T1 JOIN concert AS T2 ON T1.Singer_ID  =  T2.concert_ID ORDER BY T1.Age LIMIT 1
+
+[2] Question: What are the names and release years for all the songs of the youngest singer?
+    Gold: SELECT song_name ,  song_release_year FROM singer ORDER BY age LIMIT 1
+    Pred: SELECT Song_Name ,  Song_release_year FROM singer WHERE Age = (SELECT min(Age) FROM singer);
+
+[3] Question: How many singers are from each country?
+    Gold: SELECT country ,  count(*) FROM singer GROUP BY country
+    Pred: SELECT COUNT(*) ,  Country FROM singer GROUP BY Country

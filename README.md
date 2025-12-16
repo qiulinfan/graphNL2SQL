@@ -403,17 +403,17 @@ graphNL2SQL/
 
 | Model/Method (Year) | Core Approach | Exact Match (EM) | Execution Match (EX) | vs. Our Method |
 |---------------------|---------------|------------------|----------------------|----------------|
-| **Ours: Qwen-7B + LoRA** | **LLM + Fine-tuning + Schema Linking** | **41.5%** (419/1034) | **61.12%** (632/1034) | **Baseline** |
-| Seq2SQL (2017) | Basic Seq2Seq | 9.7% | 15.6% | +31.8% EM, +45.5% EX |
-| SQLNet (2017) | Structured Prediction | 15.7% | 20.2% | +25.8% EM, +40.9% EX |
-| SyntaxSQLNet (2018) | Syntax Tree Generation | 18.9% | 25.1% | +22.6% EM, +36.0% EX |
-| IRNet (2019) | Intermediate Representation | 39.4% | 46.8% | +2.1% EM, +14.3% EX |
-| RAT-SQL (2019/2021) | Relation-Aware Graph | 46.5% | 52.3% |  +8.8% EX |
+| **Ours: Qwen-7B + LoRA** | **LLM + Fine-tuning + Schema Linking** | **41.5%** (429/1034) | **58.3%** (603/1034) | **Baseline** |
+| Seq2SQL (2017) | Basic Seq2Seq | 9.7% | 15.6% | +31.8% EM, +42.7% EX |
+| SQLNet (2017) | Structured Prediction | 15.7% | 20.2% | +25.8% EM, +38.1% EX |
+| SyntaxSQLNet (2018) | Syntax Tree Generation | 18.9% | 25.1% | +22.6% EM, +33.2% EX |
+| IRNet (2019) | Intermediate Representation | 39.4% | 46.8% | +2.1% EM, +11.5% EX |
+| RAT-SQL (2019/2021) | Relation-Aware Graph | 46.5% | 52.3% | -5.0% EM, +6.0% EX |
 
 **Key Observations:**
 - Our approach significantly outperforms early neural methods (Seq2SQL, SQLNet, SyntaxSQLNet)
 - We achieve comparable EM accuracy to specialized graph-based methods like IRNet
-- **Execution Match is our strength**: We surpass RAT-SQL by +8.8% on EX, indicating our SQL queries are semantically correct even when syntactically different
+- **Execution Match is our strength**: We surpass RAT-SQL by +6.0% on EX, indicating our SQL queries are semantically correct even when syntactically different
 - Fine-tuned 7B LLM with LoRA achieves competitive performance with much simpler architecture
 
 ---
